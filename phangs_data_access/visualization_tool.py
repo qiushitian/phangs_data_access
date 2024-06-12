@@ -10,7 +10,7 @@ from astropy.visualization.wcsaxes import SphericalCircle
 from astropy.stats import SigmaClip
 from photutils.background import Background2D, MedianBackground
 
-from cluster_cat_dr import phot_data_access, helper_func
+from phangs_data_access import phot_data_access, helper_func
 
 import multicolorfits as mcf
 from matplotlib.colors import Normalize, LogNorm
@@ -1437,44 +1437,45 @@ class PhotVisualize(phot_data_access.PhotAccess):
 
         ax_sed.set_title(title, fontsize=fontsize_large, loc='left')
 
-        cutout_alma = helper_func.get_img_cutout(img=mol_gas_dens_dict['mol_gas_dens_data'],
-                                                 wcs=mol_gas_dens_dict['mol_gas_dens_wcs'],
-                                                 coord=SkyCoord(ra=ra_region*u.deg, dec=dec_region*u.deg),
-                                                 cutout_size=env_cutout_size)
-        if not np.isnan(cutout_alma.data).all():
-            ax_alma = figure.add_axes([0.05, -0.05, 0.4, 0.4], projection=cutout_alma.wcs)
-            ax_cbar_alma = figure.add_axes([0.1, 0.28, 0.3, 0.01])
-            cmap_alma = 'inferno'
+        if mol_gas_dens_dict is not None:
+            cutout_alma = helper_func.get_img_cutout(img=mol_gas_dens_dict['mol_gas_dens_data'],
+                                                     wcs=mol_gas_dens_dict['mol_gas_dens_wcs'],
+                                                     coord=SkyCoord(ra=ra_region*u.deg, dec=dec_region*u.deg),
+                                                     cutout_size=env_cutout_size)
+            if not np.isnan(cutout_alma.data).all():
+                ax_alma = figure.add_axes([0.05, -0.05, 0.4, 0.4], projection=cutout_alma.wcs)
+                ax_cbar_alma = figure.add_axes([0.1, 0.28, 0.3, 0.01])
+                cmap_alma = 'inferno'
 
-            min_alma_value = np.nanmin(cutout_alma.data)
-            max_alma_value = np.nanmax(cutout_alma.data)
-            if min_alma_value <= 0:
-                min_alma_value = max_alma_value / 100
-            norm = LogNorm(min_alma_value, max_alma_value)
-            helper_func.create_cbar(ax_cbar=ax_cbar_alma, cmap=cmap_alma, norm=norm,
-                                    cbar_label=r'log($\Sigma_{\rm H2}$/[M$_{\odot}$ kpc$^{-2}$])', fontsize=fontsize_large,
-                                    ticks=None, labelpad=2, tick_width=2, orientation='horizontal', extend='neither')
+                min_alma_value = np.nanmin(cutout_alma.data)
+                max_alma_value = np.nanmax(cutout_alma.data)
+                if min_alma_value <= 0:
+                    min_alma_value = max_alma_value / 100
+                norm = LogNorm(min_alma_value, max_alma_value)
+                helper_func.create_cbar(ax_cbar=ax_cbar_alma, cmap=cmap_alma, norm=norm,
+                                        cbar_label=r'log($\Sigma_{\rm H2}$/[M$_{\odot}$ kpc$^{-2}$])', fontsize=fontsize_large,
+                                        ticks=None, labelpad=2, tick_width=2, orientation='horizontal', extend='neither')
 
-            ax_alma.imshow(cutout_alma.data, norm=norm, cmap=cmap_alma)
-            coord_cloud_pix = cutout_alma.wcs.world_to_pixel(mol_gas_dens_dict['coord_cloud_world'])
-            for idx, pos in enumerate(mol_gas_dens_dict['coord_cloud_world']):
-                rad = mol_gas_dens_dict['rad_cloud_arcsec'][idx]
-                if np.isnan(rad):
-                    continue
-                if ((coord_cloud_pix[0][idx] < 0) | (coord_cloud_pix[1][idx] < 0) |
-                        (coord_cloud_pix[0][idx] > cutout_alma.data.shape[0]) |
-                        (coord_cloud_pix[1][idx] > cutout_alma.data.shape[1]) ):
-                    continue
-                helper_func.plot_coord_circle(ax=ax_alma, pos=pos, rad=rad, color='blue', line_style='-', line_width=2)
+                ax_alma.imshow(cutout_alma.data, norm=norm, cmap=cmap_alma)
+                coord_cloud_pix = cutout_alma.wcs.world_to_pixel(mol_gas_dens_dict['coord_cloud_world'])
+                for idx, pos in enumerate(mol_gas_dens_dict['coord_cloud_world']):
+                    rad = mol_gas_dens_dict['rad_cloud_arcsec'][idx]
+                    if np.isnan(rad):
+                        continue
+                    if ((coord_cloud_pix[0][idx] < 0) | (coord_cloud_pix[1][idx] < 0) |
+                            (coord_cloud_pix[0][idx] > cutout_alma.data.shape[0]) |
+                            (coord_cloud_pix[1][idx] > cutout_alma.data.shape[1]) ):
+                        continue
+                    helper_func.plot_coord_circle(ax=ax_alma, pos=pos, rad=rad, color='blue', line_style='-', line_width=2)
 
-            # central_coord_pixel = cutout_alma.wcs.world_to_pixel(SkyCoord(ra=ra_region*u.deg, dec=dec_region*u.deg))
-            # ax_alma.scatter(central_coord_pixel[0], central_coord_pixel[1], s=180, marker='*', color='k')
-            # ax_alma.set_xlim(0, cutout_alma.data.shape[0])
-            # ax_alma.set_ylim(0, cutout_alma.data.shape[1])
-            helper_func.plot_coord_circle(ax=ax_alma, pos=SkyCoord(ra=ra_region*u.deg, dec=dec_region*u.deg),
-                                          rad=0.1, color='k', line_style='-', line_width=2, fill=True)
-            self.arr_axis_params(ax=ax_alma, fontsize=fontsize_large, labelsize=fontsize_large)
-            # ax_alma.set_title(info_string, fontsize=fontsize_large)
+                # central_coord_pixel = cutout_alma.wcs.world_to_pixel(SkyCoord(ra=ra_region*u.deg, dec=dec_region*u.deg))
+                # ax_alma.scatter(central_coord_pixel[0], central_coord_pixel[1], s=180, marker='*', color='k')
+                # ax_alma.set_xlim(0, cutout_alma.data.shape[0])
+                # ax_alma.set_ylim(0, cutout_alma.data.shape[1])
+                helper_func.plot_coord_circle(ax=ax_alma, pos=SkyCoord(ra=ra_region*u.deg, dec=dec_region*u.deg),
+                                              rad=0.1, color='k', line_style='-', line_width=2, fill=True)
+                self.arr_axis_params(ax=ax_alma, fontsize=fontsize_large, labelsize=fontsize_large)
+                # ax_alma.set_title(info_string, fontsize=fontsize_large)
 
 
         ax_ccd = figure.add_axes([0.55, 0.03, 0.4, 0.25])
@@ -2424,7 +2425,7 @@ class PhotVisualize(phot_data_access.PhotAccess):
         return hst_rgb, new_wcs
 
     @staticmethod
-    def get_image_scale_with_circle(img_data, img_wcs, ra, dec, circle_rad=0.16, box_scaling=1/5, filter_scaling=1/10):
+    def get_image_scale_with_circle(img_data, img_wcs, ra, dec, circle_rad=0.16, box_scaling=1/10, filter_scaling=1/10):
         """
         Function calculate scaling in image by taking median background of image and the maximum value inside a circle
 

@@ -6,6 +6,9 @@ import os
 from pathlib import Path
 import warnings
 
+from matplotlib.colorbar import ColorbarBase
+from matplotlib.colors import Normalize, LogNorm
+
 from astropy.nddata import Cutout2D
 from astropy.wcs import WCS
 from astropy.io import fits
@@ -19,10 +22,23 @@ speed_of_light_kmps = const.c.to('km/s').value
 from scipy.constants import c as speed_of_light_mps
 
 from reproject import reproject_interp
+from TardisPipeline.readData.MUSE_WFM import get_MUSE_polyFWHM
+import ppxf.ppxf_util as util
+from scipy import odr
+import sep
 
 import numpy as np
 
-from phangs_data_access import phys_params, phangs_info
+from os import path
+import ppxf.sps_util as lib
+from urllib import request
+from ppxf.ppxf import ppxf
+
+from astropy.convolution import Gaussian2DKernel, convolve
+from scipy.stats import gaussian_kde
+from matplotlib import cm
+import photometry_tools
+import dust_tools.extinction_tools
 
 
 class CoordTools:
@@ -50,26 +66,8 @@ class CoordTools:
         diameter_radian = diameter_arcsec / 3600 * np.pi / 180
         return target_dist_mpc * diameter_radian * 1000
 
-    @staticmethod
-    def get_target_central_simbad_coords(target_name):
-        """
-        Function to find central target coordinates from SIMBAD with astroquery
-        Parameters
-        ----------
-
-        Returns
-        -------
-        central_target_coords : ``astropy.coordinates.SkyCoord``
-        """
-        from astroquery.simbad import Simbad
-        # get the center of the target
-        simbad_table = Simbad.query_object(target_name)
-        return SkyCoord('%s %s' % (simbad_table['RA'].value[0], simbad_table['DEC'].value[0]),
-                        unit=(u.hourangle, u.deg))
-
 
 class UnitTools:
-
     """
     Class to gather all tools for unit conversions
     """
@@ -98,35 +96,12 @@ class UnitTools:
         return mag - 25 - 5*np.log10(dist)
 
     @staticmethod
-    def angstrom2unit(wave, unit='mu'):
-        """
-        Returns wavelength at needed wavelength
-        Parameters
-        ----------
-        wave : float
-        unit : str
-
-        Returns
-        -------
-        wavelength : float
-        """
-        if unit == 'angstrom':
-            return wave
-        if unit == 'nano':
-            return wave * 1e-1
-        elif unit == 'mu':
-            return wave * 1e-4
-        else:
-            raise KeyError('return unit not understand')
-
-    @staticmethod
-    def get_hst_img_conv_fct(img_header, img_wcs, flux_unit='Jy'):
+    def get_hst_img_conv_fct(img_header, flux_unit='Jy'):
         """
         get unit conversion factor to go from electron counts to mJy of HST images
         Parameters
         ----------
         img_header : ``astropy.io.fits.header.Header``
-        img_wcs : ``astropy.wcs.WCS``
         flux_unit : str
 
         Returns
@@ -151,7 +126,6 @@ class UnitTools:
         else:
             raise KeyError('there is no PHOTFNU or PHOTFLAM in the header')
 
-        pixel_area_size_sr = img_wcs.proj_plane_pixel_area().value * phys_params.sr_per_square_deg
         # rescale data image
         if flux_unit == 'Jy':
             # rescale to Jy
@@ -165,68 +139,6 @@ class UnitTools:
             conversion_factor /= (pixel_area_size_sr * 1e6)
         else:
             raise KeyError('flux_unit ', flux_unit, ' not understand!')
-
-        return conversion_factor
-
-    @staticmethod
-    def get_jwst_conv_fact(img_wcs, flux_unit='Jy'):
-        """
-        get unit conversion factor for JWST image observations
-        ----------
-        img_wcs : ``astropy.wcs.WCS``
-        flux_unit : str
-
-        Returns
-        -------
-        conversion_factor : float
-
-        """
-        pixel_area_size_sr = img_wcs.proj_plane_pixel_area().value * phys_params.sr_per_square_deg
-        # rescale data image
-        if flux_unit == 'Jy':
-            # rescale to Jy
-            conversion_factor = pixel_area_size_sr * 1e6
-
-        elif flux_unit == 'mJy':
-            # rescale to Jy
-            conversion_factor = pixel_area_size_sr * 1e9
-        elif flux_unit == 'MJy/sr':
-            conversion_factor = 1
-        else:
-            raise KeyError('flux_unit ', flux_unit, ' not understand')
-        return conversion_factor
-
-    @staticmethod
-    def get_astrosat_conv_fact(img_wcs, band, flux_unit='Jy'):
-        """
-        get unit conversion factor for ASTROSAT image observations
-        ----------
-        img_wcs : ``astropy.wcs.WCS``
-        flux_unit : str
-
-        Returns
-        -------
-        conversion_factor : float
-
-        """
-        pixel_area_size_sr = img_wcs.proj_plane_pixel_area().value * phys_params.sr_per_square_deg
-
-        # rescale data image
-        if flux_unit == 'erg A-1 cm-2 s-1':
-            conversion_factor = 1
-        elif flux_unit == 'Jy':
-            band_wavelength_angstrom = BandTools.get_astrosat_band_wave(band=band, unit='angstrom')
-            conversion_factor = 1e23 * 1e-2 * 1e-8 * (band_wavelength_angstrom ** 2) / speed_of_light_mps
-        elif flux_unit == 'mJy':
-            band_wavelength_angstrom = BandTools.get_astrosat_band_wave(band=band, unit='angstrom')
-            conversion_factor = 1e3 * 1e23 * 1e-2 * 1e-8 * (band_wavelength_angstrom ** 2) / speed_of_light_mps
-        elif flux_unit == 'MJy/sr':
-            band_wavelength_angstrom = BandTools.get_astrosat_band_wave(band=band, unit='angstrom')
-            conversion_factor = (1e-6 * 1e23 * 1e-2 * 1e-8 * (band_wavelength_angstrom ** 2) /
-                                 (speed_of_light_mps * pixel_area_size_sr))
-        else:
-            raise KeyError('flux_unit ', flux_unit, ' not understand')
-        return conversion_factor
 
 
 class FileTools:
@@ -390,310 +302,37 @@ class FileTools:
             if identified_files_1 and identified_files_2:
                 return folder_path / str(identified_files_1[0])
 
-    @staticmethod
-    def load_img(file_name, hdu_number=0):
-        """function to open hdu using astropy.
 
-        Parameters
-        ----------
-        file_name : str or Path
-            file name to open
-        hdu_number : int or str
-            hdu number which should be opened. can be also a string such as 'SCI' for JWST images
+def load_img(file_name, hdu_number=0):
+    """function to open hdu using astropy.
 
-        Returns
-        -------
-        array-like,  ``astropy.io.fits.header.Header`` and ``astropy.wcs.WCS` and
-        """
-        # get hdu
-        hdu = fits.open(file_name)
-        # get header
-        header = hdu[hdu_number].header
-        # get WCS
-        wcs = WCS(header)
-        # update the header
-        header.update(wcs.to_header())
-        # reload the WCS and header
-        header = hdu[hdu_number].header
-        wcs = WCS(header)
-        # load data
-        data = hdu[hdu_number].data
-        # close hdu again
-        hdu.close()
-        return data, header, wcs
+    Parameters
+    ----------
+    file_name : str or Path
+        file name to open
+    hdu_number : int or str
+        hdu number which should be opened. can be also a string such as 'SCI' for JWST images
 
-
-class BandTools:
+    Returns
+    -------
+    array-like, astropy.header and astropy.wcs object
     """
-    Class to sort band names and identify instruments and telescopes
-    """
-
-    @staticmethod
-    def check_hst_ha_obs(target):
-        """
-        check if HST H-alpha observation is available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-        return target in phangs_info.hst_ha_obs_band_dict.keys()
-
-    @staticmethod
-    def get_hst_ha_band(target):
-        """
-        get the corresponding H-alpha band for a target
-
-        Parameters
-        ----------
-        target :  str
-
-        Returns
-        -------
-        target_name : str
-        """
-        if phangs_info.hst_ha_obs_band_dict[target]['uvis'] is not None:
-            band = phangs_info.hst_ha_obs_band_dict[target]['uvis']
-        elif phangs_info.hst_ha_obs_band_dict[target]['acs'] is not None:
-            band = phangs_info.hst_ha_obs_band_dict[target]['acs']
-        else:
-            raise KeyError(target, ' has no H-alpha observation ')
-        return band
-
-    @staticmethod
-    def get_hst_instrument(target, band):
-        """
-        get the corresponding instrument for hst observations
-
-        Parameters
-        ----------
-        target :  str
-        band :  str
-
-        Returns
-        -------
-        target_name : str
-        """
-        if band in phangs_info.hst_obs_band_dict[target]['acs_wfc1_observed_bands']:
-            instrument = 'acs'
-        elif band in phangs_info.hst_obs_band_dict[target]['wfc3_uvis_observed_bands']:
-            instrument = 'uvis'
-        else:
-            raise KeyError(target, ' has no H-alpha observation ')
-        return instrument
-
-    @staticmethod
-    def get_hst_ha_instrument(target):
-        """
-        get the corresponding instrument for hst H-alpha observations
-
-        Parameters
-        ----------
-        target :  str
-
-        Returns
-        -------
-        target_name : str
-        """
-        if phangs_info.hst_ha_obs_band_dict[target]['uvis'] is not None:
-            instrument = 'uvis'
-        elif phangs_info.hst_ha_obs_band_dict[target]['acs'] is not None:
-            instrument = 'acs'
-        else:
-            raise KeyError(target, ' has no H-alpha observation ')
-        return instrument
-
-    @staticmethod
-    def get_hst_band_wave(band, instrument='acs', wave_estimator='mean_wave', unit='mu'):
-        """
-        Returns mean wavelength of an HST specific band
-        Parameters
-        ----------
-        band : str
-        instrument : str
-        wave_estimator: str
-            can be mean_wave, min_wave or max_wave
-        unit : str
-
-        Returns
-        -------
-        wavelength : float
-        """
-        if instrument == 'acs':
-            return UnitTools.angstrom2unit(wave=phys_params.hst_acs_wfc1_bands_wave[band][wave_estimator], unit=unit)
-        elif instrument == 'uvis':
-            return UnitTools.angstrom2unit(wave=phys_params.hst_wfc3_uvis1_bands_wave[band][wave_estimator], unit=unit)
-        else:
-            raise KeyError(instrument, ' is not a HST instrument')
-
-    @staticmethod
-    def get_jwst_band_wave(band, instrument='nircam', wave_estimator='mean_wave', unit='mu'):
-        """
-        Returns mean wavelength of an JWST specific band
-        Parameters
-        ----------
-        band : str
-        instrument : str
-        wave_estimator: str
-            can be mean_wave, min_wave or max_wave
-        unit : str
-
-        Returns
-        -------
-        wavelength : float
-        """
-        if instrument == 'nircam':
-            return UnitTools.angstrom2unit(wave=phys_params.nircam_bands_wave[band][wave_estimator], unit=unit)
-        elif instrument == 'miri':
-            return UnitTools.angstrom2unit(wave=phys_params.miri_bands_wave[band][wave_estimator], unit=unit)
-        else:
-            raise KeyError(instrument, ' is not a JWST instrument')
-
-    @staticmethod
-    def get_astrosat_band_wave(band, wave_estimator='mean_wave', unit='mu'):
-        """
-        Returns mean wavelength of an JWST specific band
-        Parameters
-        ----------
-        band : str
-        wave_estimator: str
-            can be mean_wave, min_wave or max_wave
-        unit : str
-
-        Returns
-        -------
-        wavelength : float
-        """
-        return UnitTools.angstrom2unit(wave=phys_params.astrosat_bands_wave[band][wave_estimator], unit=unit)
-
-    @staticmethod
-    def get_hst_obs_band_list(target):
-        """
-        gets list of bands of HST
-        Parameters
-        ----------
-        target : str
-        Returns
-        -------
-        band_list : list
-        """
-        acs_band_list = phangs_info.hst_obs_band_dict[target]['acs_wfc1_observed_bands']
-        uvis_band_list = phangs_info.hst_obs_band_dict[target]['wfc3_uvis_observed_bands']
-        band_list = acs_band_list + uvis_band_list
-        wave_list = []
-        for band in acs_band_list:
-            wave_list.append(BandTools.get_hst_band_wave(band=band))
-        for band in uvis_band_list:
-            wave_list.append(BandTools.get_hst_band_wave(band=band, instrument='uvis'))
-        return BandTools.sort_band_list(band_list=band_list, wave_list=wave_list)
-
-    @staticmethod
-    def get_nircam_obs_band_list(target):
-        """
-        gets list of bands of HST
-        Parameters
-        ----------
-        target : str
-        Returns
-        -------
-        band_list : list
-        """
-        nircam_band_list = phangs_info.jwst_obs_band_dict[target]['nircam_observed_bands']
-        wave_list = []
-        for band in nircam_band_list:
-            wave_list.append(BandTools.get_jwst_band_wave(band=band))
-        return BandTools.sort_band_list(band_list=nircam_band_list, wave_list=wave_list)
-
-    @staticmethod
-    def get_miri_obs_band_list(target):
-        """
-        gets list of bands of HST
-        Parameters
-        ----------
-        target : str
-        Returns
-        -------
-        band_list : list
-        """
-        miri_band_list = phangs_info.jwst_obs_band_dict[target]['miri_observed_bands']
-        wave_list = []
-        for band in miri_band_list:
-            wave_list.append(BandTools.get_jwst_band_wave(band=band, instrument='miri'))
-        return BandTools.sort_band_list(band_list=miri_band_list, wave_list=wave_list)
-
-    @staticmethod
-    def get_astrosat_obs_band_list(target):
-        """
-        gets list of bands of HST
-        Parameters
-        ----------
-        target : str
-        Returns
-        -------
-        band_list : list
-        """
-        astrosat_band_list = phangs_info.astrosat_obs_band_dict[target]['observed_bands']
-        wave_list = []
-        for band in astrosat_band_list:
-            wave_list.append(BandTools.get_astrosat_band_wave(band=band))
-        return BandTools.sort_band_list(band_list=astrosat_band_list, wave_list=wave_list)
-
-    @staticmethod
-    def sort_band_list(band_list, wave_list):
-        """
-        sorts a band list with increasing wavelength
-        Parameters
-        ----------
-        band_list : list
-        wave_list : list
-        Returns
-        -------
-        sorted_band_list : list
-        """
-        # sort wavelength bands
-        sort = np.argsort(wave_list)
-        return list(np.array(band_list)[sort])
-
-
-class SpecTools:
-    """
-    tools related to spectroscopy
-    """
-
-    @staticmethod
-    def get_target_ned_redshift(target):
-        """
-        Function to get redshift from NED with astroquery
-        Parameters
-        ----------
-
-        Returns
-        -------
-        redshift : float
-        """
-
-        from astroquery.ipac.ned import Ned
-        # get the center of the target
-        ned_table = Ned.query_object(target)
-
-        return ned_table['Redshift'][0]
-
-    @staticmethod
-    def get_target_sys_vel(target):
-        """
-        Function to get target systemic velocity based on NED redshift
-        Parameters
-        ----------
-
-        Returns
-        -------
-        sys_vel : float
-        """
-        redshift = SpecTools.get_target_ned_redshift(target=target)
-        return np.log(redshift+1) * speed_of_light_kmps
-
+    # get hdu
+    hdu = fits.open(file_name)
+    # get header
+    header = hdu[hdu_number].header
+    # get WCS
+    wcs = WCS(header)
+    # update the header
+    header.update(wcs.to_header())
+    # reload the WCS and header
+    header = hdu[hdu_number].header
+    wcs = WCS(header)
+    # load data
+    data = hdu[hdu_number].data
+    # close hdu again
+    hdu.close()
+    return data, header, wcs
 
 
 def get_img_cutout(img, wcs, coord, cutout_size):

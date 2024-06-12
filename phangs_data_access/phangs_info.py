@@ -2,8 +2,249 @@
 class to gather all information need to access PHANGS observational data products
 """
 
+#
+phangs_galaxy_list = ['ic1954', 'ic5332', 'ngc0628', 'ngc0685', 'ngc1087', 'ngc1097', 'ngc1300', 'ngc1317', 'ngc1365',
+                      'ngc1385', 'ngc1433', 'ngc1510', 'ngc1512', 'ngc1559', 'ngc1566', 'ngc1672', 'ngc1792', 'ngc2775',
+                      'ngc2835', 'ngc2903', 'ngc3351', 'ngc3621', 'ngc3627', 'ngc4254', 'ngc4298', 'ngc4303', 'ngc4321',
+                      'ngc4535', 'ngc4536', 'ngc4548', 'ngc4569', 'ngc4571', 'ngc4654', 'ngc4689', 'ngc4826', 'ngc5068',
+                      'ngc5248', 'ngc6744', 'ngc7496']
 
-class PhangsObsInfo:
+# specification of observed bands for each HST target
+hst_obs_band_dict = {
+    'ic1954':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ic5332':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc0628':
+        {'acs_wfc1_observed_bands': ['F435W', 'F814W'],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F555W']},
+    'ngc0628e':
+        {'acs_wfc1_observed_bands': ['F435W', 'F814W'],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F555W']},
+    'ngc0628c':
+        {'acs_wfc1_observed_bands': ['F435W', 'F555W', 'F658N', 'F814W'],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W']},
+    'ngc0685':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1087':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1097':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1300':
+        {'acs_wfc1_observed_bands': ['F435W', 'F555W', 'F814W'],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W']},
+    'ngc1317':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1365':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1385':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1433':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1510':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1512':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1559':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1566':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc1672':
+        {'acs_wfc1_observed_bands': ['F435W', 'F814W'],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F555W']},
+    'ngc1792':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc2775':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc2835':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc2903':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc3351':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc3621':
+        {'acs_wfc1_observed_bands': ['F435W', 'F555W', 'F814W'],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W']},
+    'ngc3627':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4254':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4298':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4303':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4321':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4535':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4536':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4548':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4569':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4571':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4654':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4689':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc4826':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc5068':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc5248':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc6744':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+    'ngc7496':
+        {'acs_wfc1_observed_bands': [],
+         'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
+        }
+
+hst_ha_obs_band_dict = {
+    'ic5332': {'uvis': 'F658N', 'acs': None},
+    'ngc0628c': {'uvis': None, 'acs': 'F658N'},
+    'ngc0628e': {'uvis': 'F658N', 'acs': None},
+    'ngc1087': {'uvis': 'F657N', 'acs': None},
+    'ngc1300': {'uvis': None, 'acs': 'F658N'},
+    'ngc1365': {'uvis': 'F657N', 'acs': None},
+    'ngc1385': {'uvis': 'F657N', 'acs': None},
+    'ngc1433': {'uvis': 'F657N', 'acs': None},
+    'ngc1512': {'uvis': 'F658N', 'acs': None},
+    'ngc1566': {'uvis': 'F658N', 'acs': None},
+    'ngc1672': {'uvis': None, 'acs': 'F658N'},
+    'ngc2835': {'uvis': 'F658N', 'acs': None},
+    'ngc3351': {'uvis': 'F658N', 'acs': None},
+    'ngc3627': {'uvis': 'F658N', 'acs': None},
+    'ngc4254e': {'uvis': 'F657N', 'acs': None},
+    'ngc4254w': {'uvis': 'F657N', 'acs': None},
+    'ngc4254': {'uvis': 'F657N', 'acs': None},
+    'ngc4303': {'uvis': 'F658N', 'acs': None},
+    'ngc4321': {'uvis': 'F657N', 'acs': None},
+    'ngc5068n': {'uvis': 'F658N', 'acs': None},
+    'ngc5068s': {'uvis': 'F658N', 'acs': None},
+    'ngc5068': {'uvis': 'F658N', 'acs': None},
+    'ngc7496': {'uvis': 'F657N', 'acs': None},
+}
+
+jwst_obs_band_dict = {
+    'ic5332': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+               'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc0628': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1087': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1300': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1365': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1385': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1433': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1512': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1566': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc1672': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc2835': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc3351': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc3627': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc4254': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc4303': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc4321': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc4535': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc5068': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+    'ngc7496': {'nircam_observed_bands': ['F200W', 'F300M', 'F335M', 'F360M'],
+                'miri_observed_bands': ['F770W', 'F1000W', 'F1130W', 'F2100W']},
+}
+
+astrosat_obs_band_dict = {
+    'ic5332': {'observed_bands': ['F148W']},
+    'ngc0253': {'observed_bands': ['F169M', 'N219M', 'N263M']},
+    'ngc0300': {'observed_bands': ['F148W', 'F154W', 'F169M', 'F172M', 'N219M', 'N245M', 'N263M']},
+    'ngc0628': {'observed_bands': ['F148W', 'F154W', 'F169M', 'F172M', 'N242W', 'N219M', 'N245M', 'N263M', 'N279N']},
+    'ngc1097': {'observed_bands': ['F148W']},
+    'ngc1300': {'observed_bands': ['F148W']},
+    'ngc1317': {'observed_bands': ['F148W', 'F154W', 'F169M', 'F172M', 'N219M']},
+    'ngc1365': {'observed_bands': ['F148W', 'F169M', 'F172M', 'N219M', 'N263M', 'N279N']},
+    'ngc1385': {'observed_bands': ['F148W']},
+    'ngc1433': {'observed_bands': ['F154W', 'F169M', 'N219M', 'N245M', 'N263M', 'N279N']},
+    'ngc1512': {'observed_bands': ['F154W', 'N242W', 'N245M', 'N263M']},
+    'ngc1546': {'observed_bands': ['F148W']},
+    'ngc1566': {'observed_bands': ['F148W', 'F154W', 'F172M', 'N219M', 'N263M']},
+    'ngc2090': {'observed_bands': ['F148W']},
+    'ngc2835': {'observed_bands': ['F148W']},
+    'ngc2903': {'observed_bands': ['F148W', 'F169M', 'N219M', 'N263M']},
+    'ngc3351': {'observed_bands': ['F148W']},
+    'ngc3621': {'observed_bands': ['F148W', 'F172M']},
+    'ngc3627': {'observed_bands': ['F148W']},
+    'ngc4254': {'observed_bands': ['F148W']},
+    'ngc4298': {'observed_bands': ['F148W']},
+    'ngc4321': {'observed_bands': ['F154W']},
+    'ngc4476': {'observed_bands': ['F154W', 'N242W']},
+    'ngc4535': {'observed_bands': ['F148W']},
+    'ngc4571': {'observed_bands': ['F154W', 'N263M']},
+    'ngc4579': {'observed_bands': ['F154W']},
+    'ngc4654': {'observed_bands': ['F148W', 'F154W']},
+    'ngc5128': {'observed_bands': ['F148W', 'N219M', 'N245M', 'N279N']},
+    'ngc6744': {'observed_bands': ['F148W']},
+    'ngc7496': {'observed_bands': ['F148W']},
+    'ngc7793': {'observed_bands': ['F148W', 'N242W']}
+}
+
+hst_cluster_catalog_target_list = ['ic1954', 'ic5332', 'ngc0628e', 'ngc0628c', 'ngc0685', 'ngc1087', 'ngc1097',
+                                   'ngc1300', 'ngc1317', 'ngc1365', 'ngc1385', 'ngc1433', 'ngc1510', 'ngc1512',
+                                   'ngc1559', 'ngc1566', 'ngc1672', 'ngc1792', 'ngc2775', 'ngc2835', 'ngc2903',
+                                   'ngc3351', 'ngc3621', 'ngc3627', 'ngc4254', 'ngc4298', 'ngc4303', 'ngc4321',
+                                   'ngc4535', 'ngc4536', 'ngc4548', 'ngc4569', 'ngc4571', 'ngc4654', 'ngc4689',
+                                   'ngc4826', 'ngc5068', 'ngc5248', 'ngc6744', 'ngc7496']
+
+class OLDPhangsObsInfo:
     """
     all info needed for PHANGS observations are gathered in dictionaries as attributes
     """
@@ -21,7 +262,7 @@ class PhangsObsInfo:
                                    'ngc6744', 'ngc7496']
 
         # Phangs target with existing HST observations
-        self.phangs_hst_obs_target_list = ['ic1954', 'ic5332', 'ngc0628', 'ngc0628e', 'ngc0628c', 'ngc0685', 'ngc1087',
+        self.phangs_hst_obs_target_list = ['ic1954', 'ic5332', 'ngc0628', 'ngc0685', 'ngc1087',
                                            'ngc1097', 'ngc1300', 'ngc1317', 'ngc1365', 'ngc1385', 'ngc1433', 'ngc1512',
                                            'ngc1559', 'ngc1566', 'ngc1672', 'ngc1792', 'ngc2775', 'ngc2835', 'ngc2903',
                                            'ngc3351', 'ngc3621', 'ngc3627', 'ngc4254', 'ngc4298', 'ngc4303', 'ngc4321',
@@ -29,9 +270,10 @@ class PhangsObsInfo:
                                            'ngc4826', 'ngc5068', 'ngc5248', 'ngc6744', 'ngc7496']
 
         # Phangs target with existing HST H-alpha observations
-        self.phangs_hst_ha_obs_target_list = ['ngc0628', 'ngc0628e', 'ngc0628c', 'ngc1087', 'ngc1300', 'ngc1365n', 'ngc1385',
-                                              'ngc1433', 'ngc1566', 'ngc1672', 'ngc3351', 'ngc5068n', 'ngc5068s',
-                                              'ngc7496']
+        self.phangs_hst_ha_obs_target_list = ['ic5332', 'ngc0628', 'ngc0628e', 'ngc628c', 'ngc1087', 'ngc1300',
+                                              'ngc1365n', 'ngc1365', 'ngc1385', 'ngc1433', 'ngc1512', 'ngc1566',
+                                              'ngc1672', 'ngc2835', 'ngc3351', 'ngc3627', 'ngc4254', 'ngc4303',
+                                              'ngc4321', 'ngc5068n', 'ngc5068s', 'ngc5068', 'ngc7496']
 
         # Phangs target with existing NIRCAM observations
         self.phangs_nircam_obs_target_list = ['ic5332', 'ngc0628', 'ngc1087', 'ngc1300', 'ngc1365', 'ngc1385', 'ngc1433',
@@ -60,199 +302,36 @@ class PhangsObsInfo:
 
         self.hst_ver_folder_names = {'v1.0': 'v1.0'}
         self.hst_ha_ver_folder_names = {'v1p0': 'phangs-hst-ha_v1p0'}
-        self.nircam_ver_folder_names = {'v0p9': 'v0p9', 'v0p9p1': 'v0p9p1', 'v0p9p2': 'v0p9p2'}
-        self.miri_ver_folder_names = {'v0p9': 'v0p9', 'v0p9p1': 'v0p9p1', 'v0p9p2': 'v0p9p2'}
+        self.nircam_ver_folder_names = {'v0p9': 'v0p9', 'v0p9p1': 'v0p9p1', 'v0p9p2': 'v0p9p2', 'v1p1p1': 'v1p1p1'}
+        self.miri_ver_folder_names = {'v0p9': 'v0p9', 'v0p9p1': 'v0p9p1', 'v0p9p2': 'v0p9p2', 'v1p1p1': 'v1p1p1'}
         self.astrosat_ver_folder_names = {'v1p0': 'v1p0'}
 
-        # specification of observed bands for each HST target
-        self.phangs_hst_obs_band_dict = {
-            'ngc0628':
-                {'folder_name': 'ngc628mosaic',
-                 'acs_wfc1_observed_bands': ['F435W', 'F814W'],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F555W']},
-            'ngc0628e':
-                {'folder_name': 'ngc628e',
-                 'acs_wfc1_observed_bands': ['F435W', 'F814W'],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F555W'],
-                 'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N', 'F658N']},
-            'ngc0628c':
-                {'folder_name': 'ngc628c',
-                 'acs_wfc1_observed_bands': ['F435W', 'F555W', 'F814W'],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W'],
-                 'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N', 'F658N']},
-            'ngc0685':
-                {'folder_name': 'ngc685',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1087':
-                {'folder_name': 'ngc1087',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W'],
-                 'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N', 'F658N']},
-            'ngc1097':
-                {'folder_name': 'ngc1097mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1300':
-                {'folder_name': 'ngc1300mosaic',
-                 'acs_wfc1_observed_bands': ['F435W', 'F555W', 'F814W'],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W'],
-                 'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N', 'F658N']},
-            'ngc1317':
-                {'folder_name': 'ngc1317',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ic1954':
-                {'folder_name': 'ic1954',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1365':
-                {'folder_name': 'ngc1365',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W'],
-                 'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N', 'F658N']},
-            'ngc1385':
-                {'folder_name': 'ngc1385',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1433':
-                {'folder_name': 'ngc1433',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1510':
-                {'folder_name': 'ngc1512mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1512':
-                {'folder_name': 'ngc1512mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1559':
-                {'folder_name': 'ngc1559',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1566':
-                {'folder_name': 'ngc1566',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc1672':
-                {'folder_name': 'ngc1672mosaic',
-                 'acs_wfc1_observed_bands': ['F555W', 'F435W', 'F814W'],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F555W']},
-            'ngc1792':
-                {'folder_name': 'ngc1792',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc2775':
-                {'folder_name': 'ngc2775',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc2835':
-                {'folder_name': 'ngc2835',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc2903':
-                {'folder_name': 'ngc2903mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc3351':
-                {'folder_name': 'ngc3351mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc3621':
-                {'folder_name': 'ngc3621mosaic',
-                 'acs_wfc1_observed_bands': ['F435W', 'F555W', 'F814W'],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W']},
-            'ngc3627':
-                {'folder_name': 'ngc3627mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4254':
-                {'folder_name': 'ngc4254',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4298':
-                {'folder_name': 'ngc4298',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4303':
-                {'folder_name': 'ngc4303',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4321':
-                {'folder_name': 'ngc4321mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4535':
-                {'folder_name': 'ngc4535',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4536':
-                {'folder_name': 'ngc4536mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4548':
-                {'folder_name': 'ngc4548',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4569':
-                {'folder_name': 'ngc4569',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4571':
-                {'folder_name': 'ngc4571',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4654':
-                {'folder_name': 'ngc4654',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4689':
-                {'folder_name': 'ngc4689',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc4826':
-                {'folder_name': 'ngc4826',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc5068':
-                {'folder_name': 'ngc5068mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc5248':
-                {'folder_name': 'ngc5248',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc6744':
-                {'folder_name': 'ngc6744mosaic',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ngc7496':
-                {'folder_name': 'ngc7496',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-            'ic5332':
-                {'folder_name': 'ic5332',
-                 'acs_wfc1_observed_bands': [],
-                 'wfc3_uvis_observed_bands': ['F275W', 'F336W', 'F438W', 'F555W', 'F814W']},
-        }
+
 
         # specification of HST observed galaxies
         self.phangs_hst_ha_obs_band_dict = {
             'ic5332': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc0628': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc0628e': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
-            'ngc0628c': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
+            'ngc628c': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc1087': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
             'ngc1300': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
+            'ngc1365': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
             'ngc1365n': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
             'ngc1385': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
             'ngc1433': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
+            'ngc1512': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc1566': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc1672': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
+            'ngc2835': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc3351': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
+            'ngc3627': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
+            'ngc4254': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
+            'ngc4303': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
+            'ngc4321': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
             'ngc5068n': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc5068s': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
+            'ngc5068': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F658N']},
             'ngc7496': {'ha_observed': ['ha', 'ha_s', 'ha_si', 'ha_sic', 'F657N']},
         }
         # specification of observed bands for each NIRCAM target
