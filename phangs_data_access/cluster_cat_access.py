@@ -9,25 +9,34 @@ from astropy.table import Table, hstack
 from phangs_data_access import phangs_access_config, helper_func, phangs_info
 from phangs_data_access.sample_access import SampleAccess
 
+from dust_tools.extinction_tools import ExtinctionTools
+
 
 class ClusterCatAccess:
     """
     This class is the basis to access star cluster catalogs the catalog content is described in the papers:
     Maschmann et al. 2024 and Thilker et al. 2024
+
+    To Do:
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    change the extended catalog access to a regular catalog access
+    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
     """
 
-    def __init__(self):
+    def __init__(self, phangs_hst_cluster_cat_release='phangs_hst_cc_dr4_cr3_ground_based_ha',
+                 phangs_hst_cluster_cat_ver='v1', phangs_hst_cluster_cat_extend_sed_ver='HST_Ha_nircam'):
         """
 
         """
         self.phangs_hst_cluster_cat_data_path = (
             phangs_access_config.phangs_config_dict)['phangs_hst_cluster_cat_data_path']
-        self.phangs_hst_cluster_cat_release = (
-            phangs_access_config.phangs_config_dict)['phangs_hst_cluster_cat_release']
-        self.phangs_hst_cluster_cat_ver = (
-            phangs_access_config.phangs_config_dict)['phangs_hst_cluster_cat_ver']
+        self.phangs_hst_cluster_cat_release = phangs_hst_cluster_cat_release
+        self.phangs_hst_cluster_cat_ver = phangs_hst_cluster_cat_ver
+        self.phangs_hst_cluster_cat_extend_sed_ver = phangs_hst_cluster_cat_extend_sed_ver
 
         self.hst_cc_data = {}
+        self.extend_data = {}
 
         super().__init__()
 
@@ -51,9 +60,9 @@ class ClusterCatAccess:
         # assemble file name and path
         # get all instruments involved
         instruments = ''
-        if phangs_info.phangs_hst_obs_band_dict[target]['acs_wfc1_observed_bands']:
+        if phangs_info.hst_cluster_cat_obs_band_dict[target]['acs']:
             instruments += 'acs'
-            if phangs_info.phangs_hst_obs_band_dict[target]['wfc3_uvis_observed_bands']:
+            if phangs_info.hst_cluster_cat_obs_band_dict[target]['uvis']:
                 instruments += '-uvis'
         else:
             instruments += 'uvis'
@@ -77,8 +86,9 @@ class ClusterCatAccess:
             else:
                 raise KeyError('cluster_class must be class12 or class3')
 
-            file_string = Path('hlsp_phangs-cat_hst_%s_%s_multi_v1_%s-%s-%s.fits'
-                               % (instruments, target, cat_type, classify_str, cluster_str))
+            file_string = Path('hlsp_phangs-cat_hst_%s_%s_multi_%s_%s-%s-%s.fits'
+                               % (instruments, target, self.phangs_hst_cluster_cat_ver, cat_type, classify_str,
+                                  cluster_str))
 
         # folder defined by catalog version
         folder_str = Path(self.phangs_hst_cluster_cat_release + '/catalogs')
@@ -86,7 +96,6 @@ class ClusterCatAccess:
 
         file_path = cluster_dict_path / file_string
         if not os.path.isfile(file_path):
-            print(file_path, ' not found ! ')
             raise FileNotFoundError('there is no HST cluster catalog for the target ', target,
                                     ' make sure that the file ', file_path, ' exists')
         return Table.read(file_path)
@@ -108,7 +117,7 @@ class ClusterCatAccess:
         None
         """
         if target_list is None:
-            target_list = phangs_info.hst_cluster_catalog_target_list
+            target_list = phangs_info.hst_cluster_cat_target_list
 
         if classify_list is None:
             classify_list = ['human', 'ml']
@@ -119,6 +128,9 @@ class ClusterCatAccess:
         for target in target_list:
             for classify in classify_list:
                 for cluster_class in cluster_class_list:
+                    # check if catalog is already loaded
+                    if (str(target) + '_' + classify + '_' + cluster_class) in self.hst_cc_data:
+                        continue
                     if cluster_class in ['class12', 'class3']:
                         cluster_catalog_obs = self.open_hst_cluster_cat(target=target, classify=classify,
                                                                         cluster_class=cluster_class)
@@ -163,18 +175,21 @@ class ClusterCatAccess:
         """
         candidate ID, can be used to connect cross identify with the initial candidate sample
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['ID_PHANGS_CANDIDATE'])
 
     def get_hst_cc_phangs_cluster_id(self, target, classify='human', cluster_class='class12'):
         """
         Phangs ID
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['ID_PHANGS_CLUSTER'])
 
     def get_hst_cc_index(self, target, classify='human', cluster_class='class12'):
         """
         running index for each individual catalog
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['INDEX'])
 
     def get_hst_cc_coords_pix(self, target, classify='human', cluster_class='class12'):
@@ -182,6 +197,7 @@ class ClusterCatAccess:
         cluster X and Y coordinates for the PHANGS HST image products.
         These images are re-drizzled and therefore valid for all bands
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         x = np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_X'])
         y = np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_Y'])
         return x, y
@@ -190,6 +206,7 @@ class ClusterCatAccess:
         """
         cluster coordinates RA and dec [Unit is degree]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         ra = np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_RA'])
         dec = np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_DEC'])
         return ra, dec
@@ -205,6 +222,7 @@ class ClusterCatAccess:
         For a more detailed description of other class numbers see readme of the catalog data release
         https://archive.stsci.edu/hlsps/phangs-cat/dr4/hlsp_phangs-cat_hst_multi_all_multi_v1_readme.txt
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_CLUSTER_CLASS_HUMAN'])
 
@@ -212,6 +230,7 @@ class ClusterCatAccess:
         """
         Machine learning classification
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_CLUSTER_CLASS_ML_VGG'])
 
@@ -219,6 +238,7 @@ class ClusterCatAccess:
         """
         Estimated accuracy of machine learning classification
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_CLUSTER_CLASS_ML_VGG_QUAL'])
 
@@ -226,6 +246,7 @@ class ClusterCatAccess:
         """
         Classification based in U-B vs. V-I color-color diagram (See Maschmann et al. 2024) Section 4.4
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_COLORCOLOR_CLASS_UBVI'])
 
@@ -233,6 +254,7 @@ class ClusterCatAccess:
         """
         Age see Thilker et al. 2024 [unit is Myr]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['SEDfix_age'])
 
     def get_hst_cc_age_err(self, target, classify='human', cluster_class='class12'):
@@ -246,6 +268,7 @@ class ClusterCatAccess:
         """
         stellar mass [unit M_sun]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['SEDfix_mass'])
 
     def get_hst_cc_mstar_err(self, target, classify='human', cluster_class='class12'):
@@ -260,6 +283,7 @@ class ClusterCatAccess:
         """
         Dust attenuation measured in E(B-V) [unit mag]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['SEDfix_ebv'])
 
     def get_hst_cc_ebv_err(self, target, classify='human', cluster_class='class12'):
@@ -269,28 +293,39 @@ class ClusterCatAccess:
         return (np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['SEDfix_ebv_limlo']),
                 np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['SEDfix_ebv_limhi']))
 
+    def get_hst_cc_av(self, target, classify='human', cluster_class='class12'):
+        """
+        Dust attenuation measured in A_v [unit mag]
+        """
+        ebv_values = self.get_hst_cc_ebv(target=target, classify=classify, cluster_class=cluster_class)
+        return ExtinctionTools.ebv2av(ebv=ebv_values)
+
     def get_hst_cc_ir4_age(self, target, classify='human', cluster_class='class12'):
         """
         Old age estimation without decision tree [unit Age]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_AGE_MINCHISQ'])
 
     def get_hst_cc_ir4_age_err(self, target, classify='human', cluster_class='class12'):
         """
         Uncertainties of old age estimation without decision tree [unit Age]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_AGE_MINCHISQ_ERR'])
 
     def get_hst_cc_ir4_mstar(self, target, classify='human', cluster_class='class12'):
         """
         Old stellar mass estimation without decision tree [unit M_sun]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_MASS_MINCHISQ'])
 
     def get_hst_cc_ir4_mstar_err(self, target, classify='human', cluster_class='class12'):
         """
         Uncertainties of old stellar mass estimation without decision tree [unit M_sun]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_MASS_MINCHISQ_ERR'])
 
@@ -298,30 +333,42 @@ class ClusterCatAccess:
         """
         Old dust attenuation E(B-V) estimation without decision tree [unit mag]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_EBV_MINCHISQ'])
 
     def get_hst_cc_ir4_ebv_err(self, target, classify='human', cluster_class='class12'):
         """
         Uncertainties of old dust attenuation E(B-V) estimation without decision tree [unit mag]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_EBV_MINCHISQ_ERR'])
+
+    def get_hst_cc_ir4_av(self, target, classify='human', cluster_class='class12'):
+        """
+        Dust attenuation measured in A_v estimation without decision tree [unit mag]
+        """
+        ebv_values = self.get_hst_cc_ir4_ebv(target=target, classify=classify, cluster_class=cluster_class)
+        return ExtinctionTools.ebv2av(ebv=ebv_values)
 
     def get_hst_cc_ci(self, target, classify='human', cluster_class='class12'):
         """
         V-band concentration index, difference in magnitudes measured in 1 pix and 3 pix radii apertures.
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_CI'])
 
     def get_hst_cc_ir4_min_chi2(self, target, classify='human', cluster_class='class12'):
         """
         Old minimal reduced chi-square
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_REDUCED_MINCHISQ'])
 
     def get_hst_cc_cov_flag(self, target, classify='human', cluster_class='class12'):
         """
         Integer denoting the number of bands with no coverage for object
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]['PHANGS_NO_COVERAGE_FLAG'])
 
     def get_hst_cc_non_det_flag(self, target, classify='human', cluster_class='class12'):
@@ -330,35 +377,16 @@ class ClusterCatAccess:
         signal-to-noise ratio (S/N=1). 0 indicates all five bands had detections. A value of 1 and 2 means the object
          was detected in four and three bands, respectively. By design, this flag cannot be higher than 2.
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_NON_DETECTION_FLAG'])
-
-    @staticmethod
-    def filter_name2hst_band(target, filter_name):
-        """
-        Method to get from band-pass filter names to the HST filter names used for this observation.
-        """
-        if filter_name == 'NUV':
-            return 'F275W'
-        elif filter_name == 'U':
-            return 'F336W'
-        elif filter_name == 'B':
-            if 'F438W' in phangs_info.phangs_hst_obs_band_dict[target]['wfc3_uvis_observed_bands']:
-                return 'F438W'
-            else:
-                return 'F435W'
-        elif filter_name == 'V':
-            return 'F555W'
-        elif filter_name == 'I':
-            return 'F814W'
-        else:
-            raise KeyError(filter_name, ' is not available ')
 
     def get_hst_cc_band_flux(self, target, filter_name, classify='human', cluster_class='class12'):
         """
         Flux in a specific band [unit is mJy]
         """
-        band = self.filter_name2hst_band(target=target, filter_name=filter_name)
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
+        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_mJy' % band.upper()])
 
@@ -366,7 +394,8 @@ class ClusterCatAccess:
         """
         Uncertainty of flux in a specific band [unit is mJy]
         """
-        band = self.filter_name2hst_band(target=target, filter_name=filter_name)
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
+        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_mJy_ERR' % band.upper()])
 
@@ -374,21 +403,26 @@ class ClusterCatAccess:
         """
         Signa-to-noise in a specific band
         """
-        return (self.get_hst_cc_band_flux(target=target, filter_name=filter_name, classify=classify, cluster_class=cluster_class) /
-                self.get_hst_cc_band_flux_err(target=target, filter_name=filter_name, classify=classify, cluster_class=cluster_class))
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
+        return (self.get_hst_cc_band_flux(target=target, filter_name=filter_name, classify=classify,
+                                          cluster_class=cluster_class) /
+                self.get_hst_cc_band_flux_err(target=target, filter_name=filter_name, classify=classify,
+                                              cluster_class=cluster_class))
 
     def get_hst_cc_band_detect_mask(self, target, filter_name, sn=3, classify='human', cluster_class='class12'):
         """
         get boolean mask for objects detected at a signal-to-noise ratio (sn)
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         return np.array(self.get_hst_cc_band_sn(target=target, filter_name=filter_name, classify=classify,
-                                                 cluster_class=cluster_class) > sn)
+                                                cluster_class=cluster_class) > sn)
 
     def get_hst_cc_band_vega_mag(self, target, filter_name, classify='human', cluster_class='class12'):
         """
         magnitude [unit is Vega mag]
         """
-        band = self.filter_name2hst_band(target=target, filter_name=filter_name)
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
+        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_VEGA' % band.upper()])
 
@@ -397,7 +431,8 @@ class ClusterCatAccess:
         Uncertainty of magnitude. Since there is only a specific offset between AB and Vega magnitude systems,
         this is also valid for AB magnitudes [unit is mag]
         """
-        band = self.filter_name2hst_band(target=target, filter_name=filter_name)
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
+        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_VEGA_ERR' % band.upper()])
 
@@ -405,6 +440,7 @@ class ClusterCatAccess:
         """
         magnitude [unit is AB mag]
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         flux = self.get_hst_cc_band_flux(target=target, filter_name=filter_name, classify=classify,
                                          cluster_class=cluster_class)
         return helper_func.conv_mjy2ab_mag(flux=flux)
@@ -423,6 +459,7 @@ class ClusterCatAccess:
         classify: str
         cluster_class: str
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         assert (filter_name_1 in ['NUV', 'U', 'B', 'V', 'I']) & (filter_name_2 in ['NUV', 'U', 'B', 'V', 'I'])
         assert mag_sys in ['vega', 'ab']
         band_mag_1 = (getattr(self, 'get_hst_cc_band_%s_mag' % mag_sys)
@@ -443,6 +480,7 @@ class ClusterCatAccess:
         classify: str
         cluster_class: str
         """
+        self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         assert (filter_name_1 in ['NUV', 'U', 'B', 'V', 'I']) & (filter_name_2 in ['NUV', 'U', 'B', 'V', 'I'])
         band_mag_err_1 = (self.get_hst_cc_band_vega_mag_err
                           (target=target, filter_name=filter_name_1, classify=classify, cluster_class=cluster_class))
@@ -471,7 +509,8 @@ class ClusterCatAccess:
         """
         quick_access_dict_path = \
             (Path(phangs_access_config.phangs_config_dict['phangs_hst_cluster_cat_quick_access_path']) /
-             ('quick_access_dict_%s_%s_%s.npy' % (target, classify, cluster_class)))
+             ('quick_access_dict_%s_%s_%s_%s_%s.npy' %
+              (self.phangs_hst_cluster_cat_release, self.phangs_hst_cluster_cat_ver, target, classify, cluster_class)))
 
         if os.path.isfile(quick_access_dict_path) and not reload:
             return np.load(quick_access_dict_path, allow_pickle=True).item()
@@ -487,6 +526,7 @@ class ClusterCatAccess:
             cluster_class_hum = np.array([])
             cluster_class_ml = np.array([])
             cluster_class_ml_qual = np.array([])
+            ci = np.array([])
 
             color_vi_vega = np.array([])
             color_nuvu_vega = np.array([])
@@ -518,9 +558,12 @@ class ClusterCatAccess:
             age = np.array([])
             mstar = np.array([])
             ebv = np.array([])
+            age_old = np.array([])
+            mstar_old = np.array([])
+            ebv_old = np.array([])
 
             if target == 'all':
-                target_list = phangs_info.hst_cluster_catalog_target_list
+                target_list = phangs_info.hst_cluster_cat_target_list
             else:
                 target_list = [target]
 
@@ -534,15 +577,20 @@ class ClusterCatAccess:
             for target in target_list:
 
                 for cluster_class in cluster_class_list:
+                    # make sure that data is loaded
+                    self.load_hst_cluster_cat()
+                    # make sure that data is loaded
+                    self.load_hst_cluster_cat(target_list=target_list, classify_list=[classify],
+                                              cluster_class_list=[cluster_class])
 
                     phangs_cluster_id = np.concatenate([phangs_cluster_id,
                                                         self.get_hst_cc_phangs_cluster_id(target=target,
                                                                                           cluster_class=cluster_class,
                                                                                           classify=classify)])
-                    phangs_candidate_id = np.concatenate([phangs_candidate_id,
-                                                          self.get_hst_cc_phangs_candidate_id(target=target,
-                                                                                              cluster_class=cluster_class,
-                                                                                              classify=classify)])
+                    phangs_candidate_id = np.concatenate([
+                        phangs_candidate_id, self.get_hst_cc_phangs_candidate_id(target=target,
+                                                                                 cluster_class=cluster_class,
+                                                                                 classify=classify)])
                     index = np.concatenate([index, self.get_hst_cc_index(target=target, cluster_class=cluster_class,
                                                                          classify=classify)])
                     ra_, dec_ = self.get_hst_cc_coords_world(target=target, cluster_class=cluster_class,
@@ -565,6 +613,8 @@ class ClusterCatAccess:
                         np.concatenate([cluster_class_ml_qual,
                                         self.get_hst_cc_class_ml_vgg_qual(target=target, cluster_class=cluster_class,
                                                                           classify=classify)])
+                    ci = np.concatenate([ci, self.get_hst_cc_ci(target=target, cluster_class=cluster_class,
+                                                                classify=classify)])
 
                     color_vi_vega = np.concatenate([color_vi_vega,
                                                     self.get_hst_cc_color(target=target, cluster_class=cluster_class,
@@ -649,7 +699,6 @@ class ClusterCatAccess:
                     v_mag_ab = np.concatenate([v_mag_ab, v_mag_ab_])
                     # get distance
                     sample_access = SampleAccess()
-                    print(target)
                     target_dist = sample_access.get_target_dist(
                         target=helper_func.FileTools.get_sample_table_target_name(target=target))
                     abs_v_mag_vega = np.concatenate([abs_v_mag_vega,
@@ -670,6 +719,14 @@ class ClusterCatAccess:
                     ebv = np.concatenate([ebv, self.get_hst_cc_ebv(target=target, cluster_class=cluster_class,
                                                                    classify=classify)])
 
+                    age_old = np.concatenate([age_old, self.get_hst_cc_ir4_age(target=target, cluster_class=cluster_class,
+                                                                           classify=classify)])
+                    mstar_old = np.concatenate([mstar_old, self.get_hst_cc_ir4_mstar(target=target,
+                                                                                 cluster_class=cluster_class,
+                                                                                 classify=classify)])
+                    ebv_old = np.concatenate([ebv_old, self.get_hst_cc_ir4_ebv(target=target, cluster_class=cluster_class,
+                                                                           classify=classify)])
+
             quick_access_dict = {
                 'phangs_cluster_id': phangs_cluster_id,
                 'phangs_candidate_id': phangs_candidate_id,
@@ -682,6 +739,7 @@ class ClusterCatAccess:
                 'cluster_class_hum': cluster_class_hum,
                 'cluster_class_ml': cluster_class_ml,
                 'cluster_class_ml_qual': cluster_class_ml_qual,
+                'ci': ci,
                 'color_vi_vega': color_vi_vega,
                 'color_nuvu_vega': color_nuvu_vega,
                 'color_ub_vega': color_ub_vega,
@@ -706,9 +764,276 @@ class ClusterCatAccess:
                 'ccd_class': ccd_class,
                 'age': age,
                 'mstar': mstar,
-                'ebv': ebv
+                'ebv': ebv,
+                'age_old': age_old,
+                'mstar_old': mstar_old,
+                'ebv_old': ebv_old,
             }
 
             if save_quick_access:
                 np.save(quick_access_dict_path, quick_access_dict)
             return quick_access_dict
+
+    def load_ccd_hull(self, ccd_type='ubvi', cluster_region='ycl', classify='human'):
+        """
+        Loading the color-color diagram hulls published in Maschmann+2024
+
+        Parameters
+        ----------
+        ccd_type : str
+        cluster_region: str
+        classify: str
+        """
+
+        hull = np.genfromtxt(Path(phangs_access_config.phangs_config_dict['phangs_hst_cluster_cat_data_path']) /
+                             self.phangs_hst_cluster_cat_release / 'hull' /
+                             ('hlsp_phangs-cat_hst_multi_hull_multi_%s_%s-%s-%s.txt' %
+                              (self.phangs_hst_cluster_cat_ver, cluster_region, classify, ccd_type)))
+        x_color_hull = hull[:, 0]
+        y_color_hull = hull[:, 1]
+        return x_color_hull, y_color_hull
+
+    @staticmethod
+    def points_in_hull(p, hull, tol=1e-12):
+        """
+        Parameters
+        ----------
+        p : vector
+        hull: array-like
+        tol: float
+        """
+
+        return np.all(hull.equations[:, :-1] @ p.T + np.repeat(hull.equations[:, -1][None, :], len(p), axis=0).T <= tol,
+                      0)
+
+    def load_extend_phot_table(self, target):
+        """
+        Loading extended photometric catalog
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if already loaded
+        if ('extend_phot_table_data_%s' % target) in self.extend_data.keys():
+            return None
+
+        file_path = (Path(phangs_access_config.phangs_config_dict['phangs_hst_cluster_cat_extend_photo_path']) /
+                     ('%s_IR4' % phangs_access_config.phangs_config_dict['phangs_hst_cluster_cat_extend_photo_ver']))
+
+        file_name = ('Phot_%s_%s_IR4_class12human.fits' %
+                     (phangs_access_config.phangs_config_dict['phangs_hst_cluster_cat_extend_photo_ver'],
+                      helper_func.FileTools.target_names_no_zeros(target=target)))
+
+        table_data, table_header = helper_func.FileTools.load_fits_table(file_name=file_path / file_name, hdu_number=1)
+
+        self.extend_data.update({
+            'extend_phot_table_data_%s' % target: table_data,
+            'extend_phot_table_header_%s' % target: table_header
+        })
+
+        # ra_photo_data = photo_data_table['raj2000']
+        # dec_photo_data = photo_data_table['dej2000']
+        # some_id_photo_data = photo_data_table['ID_phangs']
+
+    def load_extend_sed_table(self, target):
+        """
+        Loading extended sed fit catalog
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if already loaded
+        if ('extend_sed_table_data_%s' % target) in self.extend_data.keys():
+            return None
+
+        file_path = Path(phangs_access_config.phangs_config_dict['phangs_hst_cluster_cat_extend_sed_fit_path'])
+        file_name = '%s_%s_all_clusters_results.csv' % (helper_func.FileTools.target_names_no_zeros(target=target),
+                                                        self.phangs_hst_cluster_cat_extend_sed_ver)
+        table_data = helper_func.FileTools.load_ascii_table(file_name=file_path / file_name)
+
+        self.extend_data.update({
+            'extend_sed_table_data_%s' % target: table_data,
+        })
+
+    def get_extend_phot_candidate_id(self, target):
+        """
+        access extended photometry candidate id
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if loaded
+        self.load_extend_phot_table(target=target)
+        return np.array(self.extend_data['extend_phot_table_data_%s' % target]['ID_phangs'])
+
+    def get_extend_phot_coords(self, target):
+        """
+        access extended photometry coordinates
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if loaded
+        self.load_extend_phot_table(target=target)
+        return (np.array(self.extend_data['extend_phot_table_data_%s' % target]['raj2000']),
+                np.array(self.extend_data['extend_phot_table_data_%s' % target]['dej2000']))
+
+    def get_extend_phot_band_vega_mag(self, target, band):
+        """
+        access extended photometry Vega magnitude
+
+        Parameters
+        ----------
+        target : str
+        band : str
+        """
+        # check if loaded
+        self.load_extend_phot_table(target=target)
+        return np.array(self.extend_data['extend_phot_table_data_%s' % target]['%s_veg' % band])
+
+    def get_extend_phot_band_flux(self, target, band):
+        """
+        access extended photometry flux
+
+        Parameters
+        ----------
+        target : str
+        band : str
+        """
+        # check if loaded
+        self.load_extend_phot_table(target=target)
+        return np.array(self.extend_data['extend_phot_table_data_%s' % target]['flux_%s' % band])
+
+    def get_extend_phot_band_flux_err(self, target, band):
+        """
+        access extended photometry flux uncertainty
+
+        Parameters
+        ----------
+        target : str
+        band : str
+        """
+        # check if loaded
+        self.load_extend_phot_table(target=target)
+        return np.array(self.extend_data['extend_phot_table_data_%s' % target]['er_flux_%s' % band])
+
+    def get_extend_phot_band_ab_mag(self, target, band):
+        """
+        access extended photometry AB magnitude
+
+        Parameters
+        ----------
+        target : str
+        band : str
+        """
+        # check if loaded
+        self.load_extend_phot_table(target=target)
+        return np.array(self.extend_data['extend_phot_table_data_%s' % target]['%s_ab' % band])
+
+    def get_extend_phot_band_mag_err(self, target, band):
+        """
+        access extended photometry magnitude uncertainty
+
+        Parameters
+        ----------
+        target : str
+        band : str
+        """
+        # check if loaded
+        self.load_extend_phot_table(target=target)
+        return np.array(self.extend_data['extend_phot_table_data_%s' % target]['err_%s' % band])
+
+    def get_extend_sed_candidate_id(self, target):
+        """
+        access extended sed fit id
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if loaded
+        self.load_extend_sed_table(target=target)
+        return np.array(self.extend_data['extend_sed_table_data_%s' % target]['id'])
+
+    def get_extend_sed_age(self, target):
+        """
+        access extended sed fit age
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if loaded
+        self.load_extend_sed_table(target=target)
+        return np.array(self.extend_data['extend_sed_table_data_%s' % target]['best.sfh.age'])
+
+    def get_extend_sed_mstar(self, target):
+        """
+        access extended sed fit stellar mass
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if loaded
+        self.load_extend_sed_table(target=target)
+        return np.array(self.extend_data['extend_sed_table_data_%s' % target]['best.stellar.m_star'])
+
+    def get_extend_sed_av(self, target):
+        """
+        access extended sed fit A_v
+
+        Parameters
+        ----------
+        target : str
+        """
+        # check if loaded
+        self.load_extend_sed_table(target=target)
+        return np.array(self.extend_data['extend_sed_table_data_%s' % target]['best.attenuation.A550'])
+
+    def get_extend_sed_ebv(self, target):
+        """
+        access extended sed fit E(B-V)
+
+        Parameters
+        ----------
+        target : str
+        """
+
+        # convert to E(B-V)
+        return ExtinctionTools.av2ebv(av=self.get_extend_sed_av(target))
+
+    def identify_phangs_id_in_ext_phot_table(self, target, single_phangs_cluster_id):
+
+        hst_cc_phangs_candidate_id = self.get_hst_cc_phangs_candidate_id(target=target)
+        hst_cc_phangs_cluster_id = self.get_hst_cc_phangs_cluster_id(target=target)
+        extend_phot_candidate_id = self.get_extend_phot_candidate_id(target=target)
+
+        mask_select_candidate_id = hst_cc_phangs_cluster_id == single_phangs_cluster_id
+        if np.sum(mask_select_candidate_id) == 0:
+            raise IndexError(' the PHANGS Cluster ID ', single_phangs_cluster_id, ' is not in the ID list of ', target)
+
+        select_candidate_id = hst_cc_phangs_candidate_id[hst_cc_phangs_cluster_id == single_phangs_cluster_id]
+
+        index_obj = np.where(extend_phot_candidate_id == select_candidate_id)
+        return index_obj[0][0]
+
+    def identify_phangs_id_in_ext_sed_table(self, target, single_phangs_cluster_id):
+
+        hst_cc_phangs_candidate_id = self.get_hst_cc_phangs_candidate_id(target=target)
+        hst_cc_phangs_cluster_id = self.get_hst_cc_phangs_cluster_id(target=target)
+        extend_sed_candidate_id = self.get_extend_sed_candidate_id(target=target)
+
+        mask_select_candidate_id = hst_cc_phangs_cluster_id == single_phangs_cluster_id
+        if np.sum(mask_select_candidate_id) == 0:
+            raise IndexError(' the PHANGS Cluster ID ', single_phangs_cluster_id, ' is not in the ID list of ', target)
+
+        select_candidate_id = hst_cc_phangs_candidate_id[hst_cc_phangs_cluster_id == single_phangs_cluster_id]
+
+        index_obj = np.where(extend_sed_candidate_id == select_candidate_id)
+        print(index_obj)
+        return index_obj[0][0]

@@ -6,7 +6,6 @@ __all__ = [
     'cluster_cat_access',
     'phot_access',
     'helper_func',
-    'phangs_data_access'
 ]
 
 import phangs_data_access.phangs_info
@@ -15,5 +14,4 @@ import phangs_data_access.sample_access
 import phangs_data_access.cluster_cat_access
 import phangs_data_access.phot_access
 import phangs_data_access.helper_func
-import phangs_data_access.phangs_data_access
 

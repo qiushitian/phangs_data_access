@@ -1,6 +1,7 @@
 """
 Script to access the entire PHANGS galaxy sample and global properties
 """
+from pathlib import Path
 from astropy.table import Table
 import numpy as np
 from phangs_data_access import phangs_access_config, helper_func
@@ -56,6 +57,19 @@ class SampleAccess:
         """
         self.check_load_phangs_data_table()
         return self.phangs_sample_table['name']
+
+    def get_target_central_coords(self, target):
+        """
+        get target central coordinates
+        Parameters
+        ----------
+        target : str
+            Galaxy name
+        """
+        self.check_load_phangs_data_table()
+        mask_target = self.phangs_sample_table['name'] == target
+        return (self.phangs_sample_table['orient_ra'][mask_target].value[0],
+                self.phangs_sample_table['orient_dec'][mask_target].value[0])
 
     def get_target_sfr(self, target):
         """
@@ -394,3 +408,42 @@ class SampleAccess:
         self.check_load_phangs_data_table()
         mask_target = self.phangs_sample_table['name'] == target
         return self.phangs_sample_table['morph_t_unc'][mask_target].value[0]
+
+    @staticmethod
+    def get_hst_obs_zp_mag(target, band, mag_sys='vega'):
+        """"
+        load zero point magnitude for a HST target
+        Parameters
+        ----------
+        target : str
+        band : str
+        mag_sys : str
+        """
+        header_df = helper_func.FileTools.load_ascii_table_from_txt(
+            file_name=(Path(phangs_access_config.phangs_config_dict['hst_obs_hdr_file_path']) /
+                       ('header_info_%s_prime.txt' % helper_func.FileTools.target_names_no_zeros(target=target))))
+        filter_set = np.array(header_df['filter'].to_list())
+        mask_filter = filter_set == band
+
+        if mag_sys == 'vega':
+            return np.array(header_df['zpVEGA'].to_list())[mask_filter]
+        elif mag_sys == 'AB':
+            return np.array(header_df['zpAB'].to_list())[mask_filter]
+        else:
+            raise KeyError('mag_sys must be vega or AB')
+    @staticmethod
+    def get_hst_obs_date(target, band):
+        """"
+        load zero point magnitude for a HST target
+        Parameters
+        ----------
+        target : str
+        band : str
+        """
+        header_df = helper_func.FileTools.load_ascii_table_from_txt(
+            file_name=(Path(phangs_access_config.phangs_config_dict['hst_obs_hdr_file_path']) /
+                       ('header_info_%s_prime.txt' % helper_func.FileTools.target_names_no_zeros(target=target))))
+        filter_set = np.array(header_df['filter'].to_list())
+        mask_filter = filter_set == band
+
+        return np.array(header_df['date'].to_list())[mask_filter]
