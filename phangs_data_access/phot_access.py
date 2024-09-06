@@ -3,8 +3,10 @@ Construct a data access structure for HST and JWST imaging data
 """
 import os.path
 from pathlib import Path
+import pickle
 
 import numpy as np
+from Cython.Compiler.Pythran import is_type
 from scipy.constants import c as speed_of_light
 
 from astropy.coordinates import SkyCoord
@@ -57,7 +59,8 @@ class PhotAccess:
             # use the most common target names like central observations for ngc 628
             if target_name == 'ngc0628':
                 target_ha_name = 'ngc0628c'
-
+            else:
+                target_ha_name = target_name
         self.target_ha_name = target_ha_name
 
         # loaded data dictionaries
@@ -68,7 +71,7 @@ class PhotAccess:
         self.astrosat_bands_data = {}
 
         # get path to observation coverage hulls
-        self.path2obs_cover_gull = (Path(__file__).parent.parent.absolute() / 'meta_data' / 'obs_coverage' /
+        self.path2obs_cover_hull = (Path(__file__).parent.parent.absolute() / 'meta_data' / 'obs_coverage' /
                                     'data_output')
 
         super().__init__()
@@ -96,9 +99,14 @@ class PhotAccess:
         hst_data_folder = (Path(phangs_access_config.phangs_config_dict['hst_data_path']) /
                            helper_func.FileTools.target_names_no_zeros(target=self.target_name) /
                            (instrument + band.lower()))
-
-        file_name = '%s_%s_%s_exp_drc_%s.fits' % (helper_func.FileTools.target_names_no_zeros(target=self.target_name),
-                                                  instrument, band.lower(), file_type)
+        if file_type in ['sci', 'wht']:
+            file_name = '%s_%s_%s_exp_drc_%s.fits' % (helper_func.FileTools.target_names_no_zeros(target=self.target_name),
+                                                      instrument, band.lower(), file_type)
+        elif file_type == 'err':
+            file_name = '%s_%s_%s_%s_drc_wht.fits' % (helper_func.FileTools.target_names_no_zeros(target=self.target_name),
+                                                      instrument, band.lower(), file_type)
+        else:
+            raise KeyError('file_type must be in sci, err or wht')
 
         return Path(hst_data_folder) / file_name
 
@@ -122,10 +130,10 @@ class PhotAccess:
             file_name = '%s_hst_ha.fits' % helper_func.FileTools.target_names_no_zeros(target=self.target_ha_name)
         elif os.path.isfile(hst_data_folder / ('%s_hst_%s_contsub.fits' %
                                                (helper_func.FileTools.target_names_no_zeros(target=self.target_ha_name),
-                                                helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name)))):
+                                                helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name)))):
             file_name = ('%s_hst_%s_contsub.fits' %
                          (helper_func.FileTools.target_names_no_zeros(target=self.target_ha_name),
-                          helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name)))
+                          helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name)))
         else:
             raise KeyError('No H-alpha continuum subtracted product found for ', self.target_ha_name)
 
@@ -197,7 +205,8 @@ class PhotAccess:
             err_file_name = self.get_hst_img_file_name(band=band, file_type='err')
             err_data, err_header, err_wcs = helper_func.FileTools.load_img(file_name=err_file_name)
             # rescale image to needed unit
-            err_data *= helper_func.UnitTools.get_hst_img_conv_fct(img_header=err_header, img_wcs=err_wcs,
+            err_data = 1/ np.sqrt(err_data)
+            err_data *= helper_func.UnitTools.get_hst_img_conv_fct(img_header=img_header, img_wcs=img_wcs,
                                                                    flux_unit=flux_unit)
             self.hst_bands_data.update({'%s_data_err' % band: err_data, '%s_header_err' % band: err_header,
                                         '%s_wcs_err' % band: err_wcs, '%s_unit_err' % band: flux_unit,
@@ -220,7 +229,7 @@ class PhotAccess:
         # rescale image to needed unit
         img_data *= helper_func.UnitTools.get_hst_img_conv_fct(img_header=img_header, img_wcs=img_wcs,
                                                                flux_unit=flux_unit)
-        band = helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name)
+        band = helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name)
         self.hst_ha_cont_sub_bands_data.update({'%s_cont_sub_data_img' % band: img_data,
                                                 '%s_cont_sub_header_img' % band: img_header,
                                                 '%s_cont_sub_wcs_img' % band: img_wcs,
@@ -230,7 +239,26 @@ class PhotAccess:
                                                      phys_params.sr_per_square_deg)})
         if load_err:
             # TO DO: get errors !
-            raise NotImplementedError('Uncertainties are not yet available for HST H-alpha observations')
+            warnings.warn('Instead of continuum subtracted uncertainty the only the '
+                          'H-alpha uncertainty will be loaded! This needs to change in future!')
+            # raise NotImplementedError('Uncertainties are not yet available for HST H-alpha observations')
+            # 3 just load h-alpha file error
+            err_file_name = self.get_hst_img_file_name(
+                band=helper_func.ObsTools.get_hst_ha_band(target=self.target_name), file_type='err')
+            img_file_name = self.get_hst_img_file_name(
+                band=helper_func.ObsTools.get_hst_ha_band(target=self.target_name))
+            img_data, img_header, img_wcs = helper_func.FileTools.load_img(file_name=img_file_name)
+            err_data, err_header, err_wcs = helper_func.FileTools.load_img(file_name=err_file_name)
+            err_data = 1/ np.sqrt(err_data)
+            # rescale image to needed unit
+            err_data *= helper_func.UnitTools.get_hst_img_conv_fct(img_header=img_header, img_wcs=img_wcs,
+                                                                   flux_unit=flux_unit)
+
+            self.hst_ha_cont_sub_bands_data.update({
+                '%s_cont_sub_data_err' % band: err_data, '%s_cont_sub_header_err' % band: err_header,
+                '%s_cont_sub_wcs_err' % band: err_wcs, '%s_cont_sub_unit_err' % band: flux_unit,
+                '%s_cont_sub_pixel_area_size_sr_err' % band:
+                    img_wcs.proj_plane_pixel_area().value * phys_params.sr_per_square_deg})
 
     def load_nircam_band(self, band, load_err=False, flux_unit='Jy', file_name=None):
         """
@@ -286,6 +314,7 @@ class PhotAccess:
                                          img_wcs.proj_plane_pixel_area().value * phys_params.sr_per_square_deg})
         if load_err:
             err_data, err_header, err_wcs = helper_func.FileTools.load_img(file_name=file_name, hdu_number='ERR')
+
             err_data *= helper_func.UnitTools.get_jwst_conv_fact(img_wcs=img_wcs, flux_unit=flux_unit)
             self.miri_bands_data.update({'%s_data_err' % band: err_data, '%s_header_err' % band: err_header,
                                          '%s_wcs_err' % band: img_wcs, '%s_unit_err' % band: flux_unit,
@@ -328,18 +357,108 @@ class PhotAccess:
         """
         band_list = []
         # HST broad band images
-        band_list += helper_func.BandTools.get_hst_obs_band_list(target=self.target_name)
+        band_list += helper_func.ObsTools.get_hst_obs_band_list(target=self.target_name)
         # check if HST H-alpha observation is available:
         if helper_func.ObsTools.check_hst_ha_obs(target=self.target_ha_name):
-            hst_ha_band = helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name)
+            hst_ha_band = helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name)
             band_list += [hst_ha_band]
             band_list += [hst_ha_band + '_cont_sub']
         # nircam
-        band_list += helper_func.BandTools.get_nircam_obs_band_list(target=self.target_name)
+        band_list += helper_func.ObsTools.get_nircam_obs_band_list(target=self.target_name)
         # miri
-        band_list += helper_func.BandTools.get_miri_obs_band_list(target=self.target_name)
+        band_list += helper_func.ObsTools.get_miri_obs_band_list(target=self.target_name)
         # astrosat
-        band_list += helper_func.BandTools.get_astrosat_obs_band_list(target=self.target_name)
+        band_list += helper_func.ObsTools.get_astrosat_obs_band_list(target=self.target_name)
+
+        return band_list
+
+    def get_covered_hst_broad_band_list(self, ra, dec, max_dist_dist2hull_arcsec=2):
+        if self.target_name in phangs_info.hst_obs_band_dict.keys():
+            prelim_hst_broad_band_list = helper_func.ObsTools.get_hst_obs_broad_band_list(target=self.target_name)
+        else:
+            prelim_hst_broad_band_list = []
+        # check if band is really covered
+        hst_broad_band_list = []
+        for band in prelim_hst_broad_band_list:
+            if self.check_coords_covered_by_band(obs='hst', ra=ra, dec=dec, band=band, max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec):
+                hst_broad_band_list.append(band)
+        return hst_broad_band_list
+
+    def get_covered_hst_ha_band(self, ra, dec, max_dist_dist2hull_arcsec=2):
+        # same for H- alpha observations
+        if helper_func.ObsTools.check_hst_ha_obs(target=self.target_name):
+            hst_ha_band = helper_func.ObsTools.get_hst_ha_band(target=self.target_name)
+            if not self.check_coords_covered_by_band(obs='hst', ra=ra, dec=dec, band=hst_ha_band,
+                                                     max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec):
+                hst_ha_band = None
+        else:
+            hst_ha_band = None
+        return hst_ha_band
+
+    def get_covered_nircam_band_list(self, ra, dec, max_dist_dist2hull_arcsec=2):
+        # nircam
+        if helper_func.ObsTools.check_nircam_obs(target=self.target_name):
+            prelim_nircam_band_list = helper_func.ObsTools.get_nircam_obs_band_list(target=self.target_name)
+        else:
+            prelim_nircam_band_list = []
+        # make sure all bands are covered
+        nircam_band_list = []
+        for band in prelim_nircam_band_list:
+            if self.check_coords_covered_by_band(obs='nircam', ra=ra, dec=dec, band=band,
+                                                 max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec):
+                nircam_band_list.append(band)
+        return nircam_band_list
+
+    def get_covered_miri_band_list(self, ra, dec, max_dist_dist2hull_arcsec=2):
+        # miri
+        if helper_func.ObsTools.check_miri_obs(target=self.target_name):
+            prelim_miri_band_list = helper_func.ObsTools.get_miri_obs_band_list(target=self.target_name)
+        else:
+            prelim_miri_band_list = []
+        # make sure all bands are covered
+        miri_band_list = []
+        for band in prelim_miri_band_list:
+            if self.check_coords_covered_by_band(obs='miri', ra=ra, dec=dec, band=band,
+                                                 max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec):
+                miri_band_list.append(band)
+        return miri_band_list
+
+    def get_covered_astrosat_band_list(self, ra, dec, max_dist_dist2hull_arcsec=2):
+        if helper_func.ObsTools.check_astrosat_obs(target=self.target_name):
+            prelim_astrosat_band_list = helper_func.ObsTools.get_astrosat_obs_band_list(target=self.target_name)
+        else:
+            prelim_astrosat_band_list = []
+        # make sure all bands are covered
+        astrosat_band_list = []
+        for band in prelim_astrosat_band_list:
+            if self.check_coords_covered_by_band(obs='astrosat', ra=ra, dec=dec, band=band,
+                                                 max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec):
+                astrosat_band_list.append(band)
+        return astrosat_band_list
+
+    def get_covered_phangs_band_list(self, ra, dec, max_dist_dist2hull_arcsec=2, hst_broad_band=True, hst_ha=True,
+                                     hst_ha_cont_sub=True,  nircam=True, miri=True, astrosat=True):
+
+        band_list = []
+        if hst_broad_band:
+            band_list += self.get_covered_hst_broad_band_list(ra=ra, dec=dec,
+                                                              max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec)
+        if hst_ha:
+            band_list += [self.get_covered_hst_ha_band(ra=ra, dec=dec,
+                                                       max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec)]
+        if hst_ha_cont_sub:
+            band_list += [self.get_covered_hst_ha_band(ra=ra, dec=dec,
+                                                       max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec) +
+                          '_cont_sub']
+        if nircam:
+            band_list += self.get_covered_nircam_band_list(ra=ra, dec=dec,
+                                                           max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec)
+        if miri:
+            band_list += self.get_covered_miri_band_list(ra=ra, dec=dec,
+                                                         max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec)
+        if astrosat:
+            band_list += self.get_covered_astrosat_band_list(ra=ra, dec=dec,
+                                                             max_dist_dist2hull_arcsec=max_dist_dist2hull_arcsec)
 
         return band_list
 
@@ -372,7 +491,6 @@ class PhotAccess:
         for band in band_list:
             # load flag indicates if a band was loaded or nothing matching was found
             band_loaded_flag = False
-
             # check hst
             # first check if object has HST observation
             if self.target_name in phangs_info.hst_obs_band_dict.keys():
@@ -463,32 +581,31 @@ class PhotAccess:
             this can be :
             'mJy', 'Jy', 'MJy/sr' or 'erg A-1 cm-2 s-1'
         """
-
         # first we need to make sure what was the old unit and for which instrument.
         # Furthermore, we need the wavelength for some transformations
-        if band in helper_func.BandTools.get_hst_obs_band_list(target=self.target_name):
+        if band in helper_func.ObsTools.get_hst_obs_band_list(target=self.target_name):
             instrument = 'hst'
             band_wave = (
-                helper_func.BandTools.get_hst_band_wave(band=band, instrument=helper_func.BandTools.get_hst_instrument(
+                helper_func.ObsTools.get_hst_band_wave(band=band, instrument=helper_func.ObsTools.get_hst_instrument(
                     target=self.target_name, band=band), unit='angstrom'))
-        elif ((band == helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name)) |
-              (band == (helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name) + '_cont_sub'))):
-            instrument = 'hst_ha'
+        elif ((band == helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name)) |
+              (band == (helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name) + '_cont_sub'))):
+            instrument = 'hst_ha_cont_sub'
             band_wave = (
-                helper_func.BandTools.get_hst_band_wave(
-                    band=helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name),
-                    instrument=helper_func.BandTools.get_hst_ha_instrument(target=self.target_ha_name),
+                helper_func.ObsTools.get_hst_band_wave(
+                    band=helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name),
+                    instrument=helper_func.ObsTools.get_hst_ha_instrument(target=self.target_ha_name),
                     unit='angstrom'))
-        elif band in helper_func.BandTools.get_nircam_obs_band_list(target=self.target_name):
+        elif band in helper_func.ObsTools.get_nircam_obs_band_list(target=self.target_name):
             instrument = 'nircam'
-            band_wave = helper_func.BandTools.get_jwst_band_wave(band=band, unit='angstrom')
-        elif band in helper_func.BandTools.get_miri_obs_band_list(target=self.target_name):
+            band_wave = helper_func.ObsTools.get_jwst_band_wave(band=band, unit='angstrom')
+        elif band in helper_func.ObsTools.get_miri_obs_band_list(target=self.target_name):
             instrument = 'miri'
-            band_wave = helper_func.BandTools.get_jwst_band_wave(band=band, instrument='miri', unit='angstrom')
+            band_wave = helper_func.ObsTools.get_jwst_band_wave(band=band, instrument='miri', unit='angstrom')
 
-        elif band in helper_func.BandTools.get_astrosat_obs_band_list(target=self.target_name):
+        elif band in helper_func.ObsTools.get_astrosat_obs_band_list(target=self.target_name):
             instrument = 'astrosat'
-            band_wave = helper_func.BandTools.get_astrosat_band_wave(band=band, unit='angstrom')
+            band_wave = helper_func.ObsTools.get_astrosat_band_wave(band=band, unit='angstrom')
         else:
             raise KeyError('the band <%s> is not under the observed bands!' % band)
 
@@ -530,9 +647,14 @@ class PhotAccess:
             elif new_unit == 'erg A-1 cm-2 s-1':
                 conversion_factor *= 1e-23 * 1e8 * (speed_of_light * 1e2) / (band_wave ** 2)
 
+        conversion_factor = helper_func.UnitTools.get_flux_unit_conv_fact(old_unit=old_unit, new_unit=new_unit,
+                                                                          pixel_size=pixel_size, band_wave=band_wave)
+
         # change data
         getattr(self, '%s_bands_data' % instrument)['%s_data_img' % band] *= conversion_factor
         getattr(self, '%s_bands_data' % instrument)['%s_unit_img' % band] = new_unit
+        if '%s_data_err' % band in getattr(self, '%s_bands_data' % instrument).keys():
+            getattr(self, '%s_bands_data' % instrument)['%s_data_err' % band] *= conversion_factor
 
     def get_band_cutout_dict(self, ra_cutout, dec_cutout, cutout_size, include_err=False, band_list=None):
         """
@@ -560,10 +682,11 @@ class PhotAccess:
 
         cutout_pos = SkyCoord(ra=ra_cutout, dec=dec_cutout, unit=(u.degree, u.degree), frame='fk5')
         cutout_dict = {'cutout_pos': cutout_pos}
+        cutout_dict.update({'cutout_size': cutout_size})
         cutout_dict.update({'band_list': band_list})
 
         for band, band_index in zip(band_list, range(len(band_list))):
-            if band in helper_func.BandTools.get_hst_obs_band_list(target=self.target_name):
+            if band in helper_func.ObsTools.get_hst_obs_band_list(target=self.target_name):
                 cutout_dict.update({
                     '%s_img_cutout' % band:
                         helper_func.CoordTools.get_img_cutout(img=self.hst_bands_data['%s_data_img' % band],
@@ -576,66 +699,70 @@ class PhotAccess:
                                                                   wcs=self.hst_bands_data['%s_wcs_err' % band],
                                                                   coord=cutout_pos,
                                                                   cutout_size=cutout_size[band_index])})
-            if band == helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name):
-                cutout_dict.update({
-                    '%s_img_cutout' % band:
-                        helper_func.CoordTools.get_img_cutout(img=self.hst_ha_cont_sub_bands_data['%s_data_img' % band],
-                                                              wcs=self.hst_ha_cont_sub_bands_data['%s_wcs_img' % band],
-                                                              coord=cutout_pos, cutout_size=cutout_size[band_index])})
-                if include_err:
+            if helper_func.ObsTools.check_hst_ha_obs(target=self.target_ha_name):
+                if band == helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name):
                     cutout_dict.update({
-                        '%s_err_cutout' % band:
-                            helper_func.CoordTools.get_img_cutout(
-                                img=self.hst_ha_cont_sub_bands_data['%s_data_err' % band],
-                                wcs=self.hst_ha_cont_sub_bands_data['%s_wcs_err' % band],
-                                coord=cutout_pos, cutout_size=cutout_size[band_index])})
-            if band == (helper_func.BandTools.get_hst_ha_band(target=self.target_ha_name) + '_cont_sub'):
-                cutout_dict.update({
-                    '%s_img_cutout' % band:
-                        helper_func.CoordTools.get_img_cutout(img=self.hst_ha_cont_sub_bands_data['%s_data_img' % band],
-                                                              wcs=self.hst_ha_cont_sub_bands_data['%s_wcs_img' % band],
-                                                              coord=cutout_pos, cutout_size=cutout_size[band_index])})
-                if include_err:
+                        '%s_img_cutout' % band:
+                            helper_func.CoordTools.get_img_cutout(img=self.hst_bands_data['%s_data_img' % band],
+                                                                  wcs=self.hst_bands_data['%s_wcs_img' % band],
+                                                                  coord=cutout_pos, cutout_size=cutout_size[band_index])})
+                    if include_err:
+                        cutout_dict.update({
+                            '%s_err_cutout' % band:
+                                helper_func.CoordTools.get_img_cutout(
+                                    img=self.hst_bands_data['%s_data_err' % band],
+                                    wcs=self.hst_bands_data['%s_wcs_err' % band],
+                                    coord=cutout_pos, cutout_size=cutout_size[band_index])})
+                if band == (helper_func.ObsTools.get_hst_ha_band(target=self.target_ha_name) + '_cont_sub'):
                     cutout_dict.update({
-                        '%s_err_cutout' % band:
-                            helper_func.CoordTools.get_img_cutout(
-                                img=self.hst_ha_cont_sub_bands_data['%s_data_err' % band],
-                                wcs=self.hst_ha_cont_sub_bands_data['%s_wcs_err' % band],
-                                coord=cutout_pos, cutout_size=cutout_size[band_index])})
+                        '%s_img_cutout' % band:
+                            helper_func.CoordTools.get_img_cutout(img=self.hst_ha_cont_sub_bands_data['%s_data_img' % band],
+                                                                  wcs=self.hst_ha_cont_sub_bands_data['%s_wcs_img' % band],
+                                                                  coord=cutout_pos, cutout_size=cutout_size[band_index])})
+                    if include_err:
+                        cutout_dict.update({
+                            '%s_err_cutout' % band:
+                                helper_func.CoordTools.get_img_cutout(
+                                    img=self.hst_ha_cont_sub_bands_data['%s_data_err' % band],
+                                    wcs=self.hst_ha_cont_sub_bands_data['%s_wcs_err' % band],
+                                    coord=cutout_pos, cutout_size=cutout_size[band_index])})
 
-            elif band in helper_func.BandTools.get_nircam_obs_band_list(target=self.target_name):
-                cutout_dict.update({
-                    '%s_img_cutout' % band:
-                        helper_func.CoordTools.get_img_cutout(img=self.nircam_bands_data['%s_data_img' % band],
-                                                              wcs=self.nircam_bands_data['%s_wcs_img' % band],
-                                                              coord=cutout_pos, cutout_size=cutout_size[band_index])})
-                if include_err:
+            if helper_func.ObsTools.check_nircam_obs(target=self.target_name):
+                if band in helper_func.ObsTools.get_nircam_obs_band_list(target=self.target_name):
                     cutout_dict.update({
-                        '%s_err_cutout' % band:
-                            helper_func.CoordTools.get_img_cutout(img=self.nircam_bands_data['%s_data_err' % band],
-                                                                  wcs=self.nircam_bands_data['%s_wcs_err' % band],
-                                                                  coord=cutout_pos,
-                                                                  cutout_size=cutout_size[band_index])})
+                        '%s_img_cutout' % band:
+                            helper_func.CoordTools.get_img_cutout(img=self.nircam_bands_data['%s_data_img' % band],
+                                                                  wcs=self.nircam_bands_data['%s_wcs_img' % band],
+                                                                  coord=cutout_pos, cutout_size=cutout_size[band_index])})
+                    if include_err:
+                        cutout_dict.update({
+                            '%s_err_cutout' % band:
+                                helper_func.CoordTools.get_img_cutout(img=self.nircam_bands_data['%s_data_err' % band],
+                                                                      wcs=self.nircam_bands_data['%s_wcs_err' % band],
+                                                                      coord=cutout_pos,
+                                                                      cutout_size=cutout_size[band_index])})
+            if helper_func.ObsTools.check_miri_obs(target=self.target_name):
+                if band in helper_func.ObsTools.get_miri_obs_band_list(target=self.target_name):
+                    cutout_dict.update({
+                        '%s_img_cutout' % band:
+                            helper_func.CoordTools.get_img_cutout(img=self.miri_bands_data['%s_data_img' % band],
+                                                                  wcs=self.miri_bands_data['%s_wcs_img' % band],
+                                                                  coord=cutout_pos, cutout_size=cutout_size[band_index])})
+                    if include_err:
+                        cutout_dict.update({
+                            '%s_err_cutout' % band:
+                                helper_func.CoordTools.get_img_cutout(img=self.miri_bands_data['%s_data_err' % band],
+                                                                      wcs=self.miri_bands_data['%s_wcs_err' % band],
+                                                                      coord=cutout_pos,
+                                                                      cutout_size=cutout_size[band_index])})
 
-            elif band in helper_func.BandTools.get_miri_obs_band_list(target=self.target_name):
-                cutout_dict.update({
-                    '%s_img_cutout' % band:
-                        helper_func.CoordTools.get_img_cutout(img=self.miri_bands_data['%s_data_img' % band],
-                                                              wcs=self.miri_bands_data['%s_wcs_img' % band],
-                                                              coord=cutout_pos, cutout_size=cutout_size[band_index])})
-                if include_err:
+            if helper_func.ObsTools.check_astrosat_obs(target=self.target_name):
+                if band in helper_func.ObsTools.get_astrosat_obs_band_list(target=self.target_name):
                     cutout_dict.update({
-                        '%s_err_cutout' % band:
-                            helper_func.CoordTools.get_img_cutout(img=self.miri_bands_data['%s_data_err' % band],
-                                                                  wcs=self.miri_bands_data['%s_wcs_err' % band],
-                                                                  coord=cutout_pos,
-                                                                  cutout_size=cutout_size[band_index])})
-            elif band in helper_func.BandTools.get_astrosat_obs_band_list(target=self.target_name):
-                cutout_dict.update({
-                    '%s_img_cutout' % band:
-                        helper_func.CoordTools.get_img_cutout(img=self.astrosat_bands_data['%s_data_img' % band],
-                                                              wcs=self.astrosat_bands_data['%s_wcs_img' % band],
-                                                              coord=cutout_pos, cutout_size=cutout_size[band_index])})
+                        '%s_img_cutout' % band:
+                            helper_func.CoordTools.get_img_cutout(img=self.astrosat_bands_data['%s_data_img' % band],
+                                                                  wcs=self.astrosat_bands_data['%s_wcs_img' % band],
+                                                                  coord=cutout_pos, cutout_size=cutout_size[band_index])})
         return cutout_dict
 
     def get_hst_median_exp_time(self, band):
@@ -661,8 +788,11 @@ class PhotAccess:
         -------
         coverage_dict : dict
         """
-        return np.load(self.path2obs_cover_gull / ('%s_hst_obs_hull_dict.npy' % self.target_name),
-                       allow_pickle=True).item()
+        # return np.load(self.path2obs_cover_hull / ('%s_hst_obs_hull_dict.npy' % self.target_name),
+        #                allow_pickle=True).item()
+
+        with open(self.path2obs_cover_hull / ('%s_hst_obs_hull_dict.npy' % self.target_name), 'rb') as file_name:
+            return pickle.load(file_name)
 
     def get_nircam_obs_coverage_hull_dict(self):
         """
@@ -672,8 +802,11 @@ class PhotAccess:
         -------
         coverage_dict : dict
         """
-        return np.load(self.path2obs_cover_gull / ('%s_nircam_obs_hull_dict.npy' % self.target_name),
-                       allow_pickle=True).item()
+        # return np.load(self.path2obs_cover_hull / ('%s_nircam_obs_hull_dict.npy' % self.target_name),
+        #                allow_pickle=True).item()
+
+        with open(self.path2obs_cover_hull / ('%s_nircam_obs_hull_dict.npy' % self.target_name), 'rb') as file_name:
+            return pickle.load(file_name)
 
     def get_miri_obs_coverage_hull_dict(self):
         """
@@ -683,8 +816,10 @@ class PhotAccess:
         -------
         coverage_dict : dict
         """
-        return np.load(self.path2obs_cover_gull / ('%s_miri_obs_hull_dict.npy' % self.target_name),
-                       allow_pickle=True).item()
+        # return np.load(self.path2obs_cover_hull / ('%s_miri_obs_hull_dict.npy' % self.target_name),
+        #                allow_pickle=True).item()
+        with open(self.path2obs_cover_hull / ('%s_miri_obs_hull_dict.npy' % self.target_name), 'rb') as file_name:
+            return pickle.load(file_name)
 
     def get_astrosat_obs_coverage_hull_dict(self):
         """
@@ -694,8 +829,10 @@ class PhotAccess:
         -------
         coverage_dict : dict
         """
-        return np.load(self.path2obs_cover_gull / ('%s_astrosat_obs_hull_dict.npy' % self.target_name),
-                       allow_pickle=True).item()
+        # return np.load(self.path2obs_cover_hull / ('%s_astrosat_obs_hull_dict.npy' % self.target_name),
+        #                allow_pickle=True).item()
+        with open(self.path2obs_cover_hull / ('%s_astrosat_obs_hull_dict.npy' % self.target_name), 'rb') as file_name:
+            return pickle.load(file_name)
 
     def check_coords_covered_by_band(self, obs, ra, dec, band, max_dist_dist2hull_arcsec=2):
         """
@@ -715,9 +852,10 @@ class PhotAccess:
         """
 
         assert obs in ['hst', 'nircam', 'miri', 'astrosat']
-
         band_hull_dict = getattr(self, 'get_%s_obs_coverage_hull_dict' % obs)()[band]
-
+        if isinstance(ra, float):
+            ra = [ra]
+            dec = [dec]
         coverage_mask = np.zeros(len(ra), dtype=bool)
         hull_data_ra = np.array([])
         hull_data_dec = np.array([])
@@ -727,9 +865,17 @@ class PhotAccess:
             dec_hull = band_hull_dict[hull_idx]['dec']
             hull_data_ra = np.concatenate([hull_data_ra, ra_hull])
             hull_data_dec = np.concatenate([hull_data_dec, dec_hull])
+
             coverage_mask += helper_func.GeometryTools.check_points_in_polygon(x_point=ra, y_point=dec,
                                                                                x_data_hull=ra_hull,
                                                                                y_data_hull=dec_hull)
+            # import matplotlib.pyplot as plt
+            # plt.clf()
+            # plt.cla()
+            # plt.plot(hull_data_ra, hull_data_dec)
+            # plt.scatter(ra, dec)
+            # plt.show()
+
 
         coverage_mask *= helper_func.GeometryTools.flag_close_points2ensemble(
             x_data=ra, y_data=dec, x_data_ensemble=hull_data_ra,y_data_ensemble=hull_data_dec,
@@ -757,7 +903,7 @@ class PhotAccess:
         assert obs in ['hst', 'nircam', 'miri', 'astrosat']
 
         if band_list is None:
-            band_list = getattr(helper_func.BandTools, 'get_%s_obs_band_list' % obs)(target=self.target_name)
+            band_list = getattr(helper_func.ObsTools, 'get_%s_obs_band_list' % obs)(target=self.target_name)
 
         coverage_mask = np.ones(len(ra), dtype=bool)
         for band in band_list:

@@ -32,7 +32,7 @@ for target in target_list:
         print('ACS ', band)
         data_path = ('acs' + band.lower() + '/' + '%s_acs_%s_exp_drc_sci.fits' %
                      (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
-        err_path = ('acs' + band.lower() + '/' + '%s_acs_%s_err_drc_sci.fits' %
+        err_path = ('acs' + band.lower() + '/' + '%s_acs_%s_err_drc_wht.fits' %
                     (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
         wht_path = ('acs' + band.lower() + '/' + '%s_acs_%s_exp_drc_wht.fits' %
                     (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
@@ -47,7 +47,7 @@ for target in target_list:
         print('UVIS ', band)
         data_path = ('uvis' + band.lower() + '/' + '%s_uvis_%s_exp_drc_sci.fits' %
                      (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
-        err_path = ('uvis' + band.lower() + '/' + '%s_uvis_%s_err_drc_sci.fits' %
+        err_path = ('uvis' + band.lower() + '/' + '%s_uvis_%s_err_drc_wht.fits' %
                     (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
         wht_path = ('uvis' + band.lower() + '/' + '%s_uvis_%s_exp_drc_wht.fits' %
                     (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
@@ -62,7 +62,7 @@ for target in target_list:
         print('UVIS ', band)
         data_path = ('uvis' + band.lower() + '/' + '%s_acs_uvis_%s_exp_drc_sci.fits' %
                      (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
-        err_path = ('uvis' + band.lower() + '/' + '%s_acs_uvis_%s_err_drc_sci.fits' %
+        err_path = ('uvis' + band.lower() + '/' + '%s_acs_uvis_%s_err_drc_wht.fits' %
                     (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))
         wht_path = ('uvis' + band.lower() + '/' + '%s_acs_uvis_%s_exp_drc_wht.fits' %
                     (helper_func.FileTools.target_names_no_zeros(target=target), band.lower()))

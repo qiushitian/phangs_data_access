@@ -4,15 +4,25 @@ Construct a data access structure for all kind of spectroscopic data products
 import os.path
 from pathlib import Path
 import numpy as np
+import pickle
 
 from astropy.wcs import WCS
 import astropy.units as u
 from astropy.coordinates import SkyCoord
 from astropy.io import fits
 
+from TardisPipeline.readData.MUSE_WFM import get_MUSE_polyFWHM
+
+
+
+
 from scipy.constants import c as speed_of_light
 
 from phangs_data_access import phangs_access_config, helper_func, phangs_info, phys_params
+
+
+
+
 
 
 class SpecAccess:
@@ -36,7 +46,7 @@ class SpecAccess:
         self.muse_datacube_data = {}
 
         # get path to observation coverage hulls
-        self.path2obs_cover_gull = (Path(__file__).parent.parent.absolute() / 'meta_data' / 'obs_coverage' /
+        self.path2obs_cover_hull = (Path(__file__).parent.parent.absolute() / 'meta_data' / 'obs_coverage' /
                                     'data_output')
 
         super().__init__()
@@ -111,15 +121,42 @@ class SpecAccess:
         muse_map_wcs = WCS(muse_hdu[map_type].header)
         muse_hdu.close()
 
-        if res == 'copt':
-            data_identifier = res + '_' + ssp_model
-        else:
-            data_identifier = res
+        data_identifier = helper_func.SpecHelper.get_dap_data_identifier(res=res, ssp_model=ssp_model)
 
         self.muse_dap_map_data.update({
             'dap_map_data_%s_%s' % (data_identifier, map_type): muse_map_data,
             'dap_map_wcs_%s_%s' % (data_identifier, map_type): muse_map_wcs
         })
+
+    def check_dap_map_loaded(self, res='copt', ssp_model='fiducial', map_type='HA6562_FLUX'):
+        data_identifier = helper_func.SpecHelper.get_dap_data_identifier(res=res, ssp_model=ssp_model)
+        if not 'dap_map_data_%s_%s' % (data_identifier, map_type) in self.muse_dap_map_data.keys():
+            self.load_muse_dap_map(res=res, ssp_model=ssp_model, map_type=map_type)
+
+    def get_muse_dap_map_cutout(self, ra_cutout, dec_cutout, cutout_size, map_type_list=None, res='copt', ssp_model='fiducial'):
+        if map_type_list is None:
+            map_type_list = ['HA6562_FLUX']
+        elif isinstance(map_type_list, str):
+            map_type_list = [map_type_list]
+
+        cutout_pos = SkyCoord(ra=ra_cutout, dec=dec_cutout, unit=(u.degree, u.degree), frame='fk5')
+        cutout_dict = {'cutout_pos': cutout_pos}
+        cutout_dict.update({'cutout_size': cutout_size})
+        cutout_dict.update({'map_type_list': map_type_list})
+
+        data_identifier = helper_func.SpecHelper.get_dap_data_identifier(res=res, ssp_model=ssp_model)
+
+        for map_type in map_type_list:
+            # make sure that map typ is loaded
+            self.check_dap_map_loaded(res=res, ssp_model=ssp_model, map_type=map_type)
+            cutout_dict.update({
+                '%s_%s_img_cutout' % (data_identifier, map_type):
+                    helper_func.CoordTools.get_img_cutout(
+                        img=self.muse_dap_map_data['dap_map_data_%s_%s' % (data_identifier, map_type)],
+                        wcs=self.muse_dap_map_data['dap_map_wcs_%s_%s' % (data_identifier, map_type)],
+                        coord=cutout_pos, cutout_size=cutout_size)})
+        return cutout_dict
+
 
     def load_muse_cube(self, res='copt'):
         """
@@ -163,8 +200,10 @@ class SpecAccess:
         -------
         coverage_mask : dict
         """
-        return np.load(self.path2obs_cover_gull / ('%s_muse_obs_hull_dict.npy' % self.target_name),
-                       allow_pickle=True).item()
+        # return np.load(self.path2obs_cover_hull / ('%s_muse_obs_hull_dict.npy' % self.target_name),
+        #                allow_pickle=True).item()
+        with open(self.path2obs_cover_hull / ('%s_muse_obs_hull_dict.npy' % self.target_name), 'rb') as file_name:
+            return pickle.load(file_name)
 
     def check_coords_covered_by_muse(self, ra, dec, res='copt', max_dist_dist2hull_arcsec=2):
         """
@@ -201,4 +240,45 @@ class SpecAccess:
             max_dist2ensemble=max_dist_dist2hull_arcsec/3600)
 
         return coverage_mask
+
+    def extract_muse_spec_circ_app(self, ra, dec, circ_rad, wave_range=None, res='copt'):
+
+        # make sure muse cube is loaded
+        if 'data_cube_%s' % res not in self.muse_datacube_data.keys():
+            self.load_muse_cube(res=res)
+
+
+        # get select spectra from coordinates
+        obj_coords_world = SkyCoord(ra=ra * u.deg, dec=dec * u.deg)
+        obj_coords_muse_pix = self.muse_datacube_data['wcs_2d_%s' % res].world_to_pixel(obj_coords_world)
+        selection_radius_pix = helper_func.CoordTools.transform_world2pix_scale(length_in_arcsec=circ_rad, wcs=self.muse_datacube_data['wcs_2d_%s' % res])
+
+        x_lin_muse = np.linspace(1, self.muse_datacube_data['data_cube_%s' % res].shape[2],
+                                 self.muse_datacube_data['data_cube_%s' % res].shape[2])
+        y_lin_muse = np.linspace(1, self.muse_datacube_data['data_cube_%s' % res].shape[1],
+                                 self.muse_datacube_data['data_cube_%s' % res].shape[1])
+        x_data_muse, y_data_muse = np.meshgrid(x_lin_muse, y_lin_muse)
+        mask_spectrum = (np.sqrt((x_data_muse - obj_coords_muse_pix[0]) ** 2 +
+                                 (y_data_muse - obj_coords_muse_pix[1]) ** 2) < selection_radius_pix)
+
+        spec_flux = np.sum(self.muse_datacube_data['data_cube_%s' % res][:, mask_spectrum], axis=1)
+        spec_flux_err = np.sqrt(np.sum(self.muse_datacube_data['var_cube_%s' % res][:, mask_spectrum], axis=1))
+
+        lsf = get_MUSE_polyFWHM(self.muse_datacube_data['wave_%s' % res], version="udf10")
+        if wave_range is None:
+            lam_range = [np.min(self.muse_datacube_data['wave_%s' % res][np.invert(np.isnan(spec_flux))]),
+                         np.max(self.muse_datacube_data['wave_%s' % res][np.invert(np.isnan(spec_flux))])]
+        else:
+            lam_range = wave_range
+        lam = self.muse_datacube_data['wave_%s' % res]
+
+        mask_wave_range = (lam > lam_range[0]) & (lam < lam_range[1])
+        spec_flux = spec_flux[mask_wave_range]
+        spec_flux_err = spec_flux_err[mask_wave_range]
+        lam = lam[mask_wave_range]
+        lsf = lsf[mask_wave_range]
+        good_pixel_mask = np.invert(np.isnan(spec_flux) + np.isinf(spec_flux))
+
+        return {'lam_range': lam_range, 'spec_flux': spec_flux, 'spec_flux_err': spec_flux_err, 'lam': lam,
+                'lsf': lsf, 'good_pixel_mask': good_pixel_mask}
 

@@ -20,6 +20,8 @@ from pandas import read_csv
 
 speed_of_light_kmps = const.c.to('km/s').value
 from scipy.constants import c as speed_of_light_mps
+
+
 from scipy.spatial import ConvexHull
 
 from shapely.geometry import Point
@@ -30,8 +32,11 @@ from matplotlib.colors import Normalize, LogNorm
 from matplotlib.colorbar import ColorbarBase
 
 from reproject import reproject_interp
-import sep
-import dust_tools.extinction_tools
+
+from astropy.stats import sigma_clipped_stats
+import pandas as pd
+
+# import dust_tools.extinction_tools
 
 import numpy as np
 
@@ -42,6 +47,13 @@ class CoordTools:
     """
     Class to gather helper functions for coordinates and distances
     """
+
+    @staticmethod
+    def calc_coord_separation(ra_1, dec_1, ra_2, dec_2):
+        pos_1 = SkyCoord(ra=ra_1*u.deg, dec=dec_1*u.deg)
+        pos_2 = SkyCoord(ra=ra_2*u.deg, dec=dec_2*u.deg)
+
+        return pos_1.separation(pos_2)
 
     @staticmethod
     def arcsec2kpc(diameter_arcsec, target_dist_mpc):
@@ -61,7 +73,8 @@ class CoordTools:
         """
         # convert arcseconds into radian
         diameter_radian = diameter_arcsec / 3600 * np.pi / 180
-        return target_dist_mpc * diameter_radian * 1000
+        # return target_dist_mpc * diameter_radian * 1000
+        return 2 * target_dist_mpc * np.tan(diameter_radian/2) * 1000
 
     @staticmethod
     def kpc2arcsec(diameter_kpc, target_dist_mpc):
@@ -226,16 +239,72 @@ class CoordTools:
         Returns
         -------
         length_in_pixel : float
-            length in pixel along ra and dec
+            length in pixel along the axis
         """
 
         return (length_in_arcsec * u.arcsec).to(u.deg) / wcs.proj_plane_pixel_scales()[dim]
+
+    @staticmethod
+    def transform_pix2world_scale(length_in_pix, wcs, dim=0):
+        """ Function to get the pixel length of a length in arcseconds
+        Parameters
+        ----------
+        length_in_pix : float
+            length
+        wcs : ``astropy.wcs.WCS``
+            astropy world coordinate system object describing the parameter image
+        dim : int, 0 or 1
+            specifys the dimension 0 for ra and 1 for dec. This should be however always the same values...
+
+        Returns
+        -------
+        length_in_pixel : float
+            length in arcsec along the axis
+        """
+
+        return length_in_pix * wcs.proj_plane_pixel_scales()[dim].to(u.arcsec).value
 
 
 class UnitTools:
     """
     Class to gather all tools for unit conversions
     """
+
+    @staticmethod
+    def get_flux_unit_conv_fact(old_unit, new_unit, pixel_size=None, band_wave=None):
+        assert old_unit in ['mJy', 'Jy', 'MJy/sr', 'erg A-1 cm-2 s-1']
+        assert new_unit in ['mJy', 'Jy', 'MJy/sr', 'erg A-1 cm-2 s-1']
+
+        conversion_factor = 1
+        if old_unit != new_unit:
+            # now first change the conversion factor to Jy
+            if old_unit == 'mJy':
+                conversion_factor *= 1e-3
+            elif old_unit == 'MJy/sr':
+                conversion_factor *= (1e6 * pixel_size)
+            elif old_unit == 'erg A-1 cm-2 s-1':
+                # The conversion from erg A-1 cm-2 s-1 is well described in
+                # https://www.physicsforums.com/threads/unit-conversion-flux-densities.742561/
+                # se also
+                # https://www.physicsforums.com/threads/unit-conversion-of-flux-jansky-to-erg-s-cm-a-simplified-guide.927166/
+                # we use fv dv = fλ dλ
+                # fλ = fv dv/dλ
+                # and because v = c/λ...
+                # fλ = fv*c / λ^2
+                # thus the conversion factor is:
+                conversion_factor = 1e23 * 1e-8 * (band_wave ** 2) / (speed_of_light_mps * 1e2)
+                # the speed of light is in m/s the factor 1-e2 changes it to cm/s
+                # the factor 1e8 changes Angstrom to cm (the Angstrom was in the nominator therefore it is 1/1e-8)
+
+            # now convert to new unit
+            if new_unit == 'mJy':
+                conversion_factor *= 1e3
+            elif new_unit == 'MJy/sr':
+                conversion_factor *= 1e-6 / pixel_size
+            elif new_unit == 'erg A-1 cm-2 s-1':
+                conversion_factor *= 1e-23 * 1e8 * (speed_of_light_mps * 1e2) / (band_wave ** 2)
+
+        return conversion_factor
 
     @staticmethod
     def get_hst_img_conv_fct(img_header, img_wcs, flux_unit='Jy'):
@@ -333,13 +402,13 @@ class UnitTools:
         if flux_unit == 'erg A-1 cm-2 s-1':
             conversion_factor = 1
         elif flux_unit == 'Jy':
-            band_wavelength_angstrom = BandTools.get_astrosat_band_wave(band=band, unit='angstrom')
+            band_wavelength_angstrom = ObsTools.get_astrosat_band_wave(band=band, unit='angstrom')
             conversion_factor = 1e23 * 1e-2 * 1e-8 * (band_wavelength_angstrom ** 2) / speed_of_light_mps
         elif flux_unit == 'mJy':
-            band_wavelength_angstrom = BandTools.get_astrosat_band_wave(band=band, unit='angstrom')
+            band_wavelength_angstrom = ObsTools.get_astrosat_band_wave(band=band, unit='angstrom')
             conversion_factor = 1e3 * 1e23 * 1e-2 * 1e-8 * (band_wavelength_angstrom ** 2) / speed_of_light_mps
         elif flux_unit == 'MJy/sr':
-            band_wavelength_angstrom = BandTools.get_astrosat_band_wave(band=band, unit='angstrom')
+            band_wavelength_angstrom = ObsTools.get_astrosat_band_wave(band=band, unit='angstrom')
             conversion_factor = (1e-6 * 1e23 * 1e-2 * 1e-8 * (band_wavelength_angstrom ** 2) /
                                  (speed_of_light_mps * pixel_area_size_sr))
         else:
@@ -417,7 +486,80 @@ class UnitTools:
         return 1e3 * 10 ** ((8.5 - mag) / 2.5)
 
     @staticmethod
-    def conv_mjy2vega(flux, ab_zp=None, vega_zp=None, target=None, band=None):
+    def get_hst_vega_zp(instrument, band):
+        """
+        Function to get HST Vega zero point flux in Jy
+        Parameters
+        ----------
+        instrument : str
+        band : str
+        Return
+        ------
+        zp_vega_flux : float
+            Zero-point flux in Jy
+        """
+        if instrument == 'acs':
+            return phys_params.hst_acs_wfc1_bands_wave[band]["zp_vega"]
+        elif instrument in ['uvis', 'uvis1']:
+            return phys_params.hst_wfc3_uvis1_bands_wave[band]["zp_vega"]
+        elif instrument == 'uvis2':
+            return phys_params.hst_wfc3_uvis2_bands_wave[band]["zp_vega"]
+        else:
+            raise KeyError('instrument must be acs, uvis, uvis1 or uvis2')
+
+    @staticmethod
+    def get_jwst_vega_zp(instrument, band):
+        """
+        Function to get JWST Vega zero point flux in Jy
+        Parameters
+        ----------
+        instrument : str
+        band : str
+        Return
+        ------
+        zp_vega_flux : float
+            Zero-point flux in Jy
+        """
+        if instrument == 'nircam':
+            return phys_params.nircam_bands_wave[band]["zp_vega"]
+        elif instrument == 'miri':
+            return phys_params.miri_bands_wave[band]["zp_vega"]
+        else:
+            raise KeyError('instrument must be nircam or miri')
+
+    @staticmethod
+    def get_astrosat_vega_zp(band):
+        """
+        Function to get ASTROSAT Vega zero point flux in Jy
+        Parameters
+        ----------
+        band : str
+        Return
+        ------
+        zp_vega_flux : float
+            Zero-point flux in Jy
+        """
+        return phys_params.astrosat_bands_wave[band]["zp_vega"]
+
+    @staticmethod
+    def conv_mjy2vega(flux, telescope, instrument, band):
+        """
+        This function converts
+        """
+        if telescope == 'hst':
+            zp_vega_flux = UnitTools.get_hst_vega_zp(instrument=instrument, band=band)
+        elif telescope == 'jwst':
+            zp_vega_flux = UnitTools.get_jwst_vega_zp(instrument=instrument, band=band)
+        elif telescope == 'astrosat':
+            zp_vega_flux = UnitTools.get_astrosat_vega_zp(band=band)
+        else:
+            raise KeyError('telescope musst be hst, jwst or astrosat')
+
+        # here we must be careful because the flux of the filter is in mJy and the zero point flux is in Jy
+        return -2.5 * np.log10(flux*1e-3 / zp_vega_flux)
+
+    @staticmethod
+    def conv_mjy2vega_old(flux, ab_zp=None, vega_zp=None, target=None, band=None):
         """
         This function (non-sophisticated as of now)
         assumes the flux are given in units of milli-Janskies
@@ -438,12 +580,9 @@ class UnitTools:
         return vega_mag
 
 
-
-
-
 class FileTools:
     """
-    Tool to organize data paths, file names and local structures
+    Tool to organize data paths, file names and local structures and str compositions
     """
 
     @staticmethod
@@ -718,158 +857,8 @@ class FileTools:
             file_name = file_name.with_suffix(suffix)
         return file_name
 
+
 class ObsTools:
-    """
-    Class to check which observations are available
-    """
-
-    @staticmethod
-    def check_hst_obs(target):
-        """
-        check if HST has any observation for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-
-        if target in phangs_info.hst_obs_band_dict.keys():
-            return True
-        else:
-            return False
-
-    @staticmethod
-    def check_hst_broad_band_obs(target):
-        """
-        check if HST has broad band observation available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-
-        if ObsTools.check_hst_obs(target=target):
-            band_list = BandTools.get_hst_ha_band(target=target)
-            for band in band_list:
-                if band[-1] == 'W':
-                    return True
-            return False
-        else:
-            return False
-
-    @staticmethod
-    def check_hst_ha_obs(target):
-        """
-        check if HST H-alpha observation is available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-
-        if (('F657N' in phangs_info.hst_obs_band_dict[target]['uvis']) |
-                ('F657N' in phangs_info.hst_obs_band_dict[target]['acs'])):
-            return True
-        elif (('F658N' in phangs_info.hst_obs_band_dict[target]['uvis']) |
-              ('F658N' in phangs_info.hst_obs_band_dict[target]['acs'])):
-            return True
-        else:
-            return False
-
-    @staticmethod
-    def check_miri_obs(target):
-        """
-        check if NIRCAM observation is available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-        if not target in phangs_info.jwst_obs_band_dict.keys():
-            return False
-        else:
-            if phangs_info.jwst_obs_band_dict[target]['miri_observed_bands']:
-                return True
-            else:
-                return False
-
-    @staticmethod
-    def check_nircam_obs(target):
-        """
-        check if NIRCAM observation is available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-        if not target in phangs_info.jwst_obs_band_dict.keys():
-            return False
-        else:
-            if phangs_info.jwst_obs_band_dict[target]['nircam_observed_bands']:
-                return True
-            else:
-                return False
-
-    @staticmethod
-    def check_astrosat_obs(target):
-        """
-        check if ASTROSAT observation is available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-        if target in phangs_info.astrosat_obs_band_dict.keys():
-            return True
-        else:
-            return False
-
-    @staticmethod
-    def check_muse_obs(target):
-        """
-        check if MUSE observation is available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-        if target in phangs_info.phangs_muse_galaxy_list:
-            return True
-        else:
-            return False
-
-    @staticmethod
-    def check_alma_obs(target):
-        """
-        check if ALMA observation is available for target
-        Parameters
-        ----------
-        target :  str
-        Returns
-        -------
-        observation flag : bool
-        """
-        if target in phangs_info.phangs_alma_galaxy_list:
-            return True
-        else:
-            return False
-
-
-class BandTools:
     """
     Class to sort band names and identify instruments and telescopes
     """
@@ -936,8 +925,10 @@ class BandTools:
         """
         if instrument == 'acs':
             return UnitTools.angstrom2unit(wave=phys_params.hst_acs_wfc1_bands_wave[band][wave_estimator], unit=unit)
-        elif instrument == 'uvis':
+        elif (instrument == 'uvis') | (instrument == 'uvis1'):
             return UnitTools.angstrom2unit(wave=phys_params.hst_wfc3_uvis1_bands_wave[band][wave_estimator], unit=unit)
+        elif instrument == 'uvis2':
+            return UnitTools.angstrom2unit(wave=phys_params.hst_wfc3_uvis2_bands_wave[band][wave_estimator], unit=unit)
         else:
             raise KeyError(instrument, ' is not a HST instrument')
 
@@ -998,11 +989,11 @@ class BandTools:
         band_list = acs_band_list + uvis_band_list
         wave_list = []
         for band in acs_band_list:
-            wave_list.append(BandTools.get_hst_band_wave(band=band))
+            wave_list.append(ObsTools.get_hst_band_wave(band=band))
         for band in uvis_band_list:
-            wave_list.append(BandTools.get_hst_band_wave(band=band, instrument='uvis'))
+            wave_list.append(ObsTools.get_hst_band_wave(band=band, instrument='uvis'))
 
-        return BandTools.sort_band_list(band_list=band_list, wave_list=wave_list)
+        return ObsTools.sort_band_list(band_list=band_list, wave_list=wave_list)
 
     @staticmethod
     def get_hst_obs_broad_band_list(target):
@@ -1021,16 +1012,67 @@ class BandTools:
         band_list = acs_band_list + uvis_band_list
         wave_list = []
         for band in acs_band_list:
-            wave_list.append(BandTools.get_hst_band_wave(band=band))
+            wave_list.append(ObsTools.get_hst_band_wave(band=band))
         for band in uvis_band_list:
-            wave_list.append(BandTools.get_hst_band_wave(band=band, instrument='uvis'))
+            wave_list.append(ObsTools.get_hst_band_wave(band=band, instrument='uvis'))
 
         # kick out bands which are not broad bands
         for band, wave in zip(band_list, wave_list):
             if band[-1] != 'W':
                 band_list.remove(band)
                 wave_list.remove(wave)
-        return BandTools.sort_band_list(band_list=band_list, wave_list=wave_list)
+        return ObsTools.sort_band_list(band_list=band_list, wave_list=wave_list)
+
+    @staticmethod
+    def check_hst_obs(target):
+        """
+        check if HST has any observation for target
+        Parameters
+        ----------
+        target :  str
+        Returns
+        -------
+        observation flag : bool
+        """
+
+        if target in phangs_info.hst_obs_band_dict.keys():
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def check_hst_broad_band_obs(target):
+        """
+        check if HST has broad band observation available for target
+        Parameters
+        ----------
+        target :  str
+        Returns
+        -------
+        observation flag : bool
+        """
+
+        if ObsTools.check_hst_obs(target=target):
+            band_list = ObsTools.get_hst_ha_band(target=target)
+            for band in band_list:
+                if band[-1] == 'W':
+                    return True
+            return False
+        else:
+            return False
+
+    @staticmethod
+    def check_hst_ha_obs(target):
+        """
+        boolean function checking if H-alpha band for a target exists
+        """
+        if (('F657N' in phangs_info.hst_obs_band_dict[target]['uvis']) |
+                ('F657N' in phangs_info.hst_obs_band_dict[target]['acs'])):
+            return True
+        elif (('F658N' in phangs_info.hst_obs_band_dict[target]['uvis']) |
+              ('F658N' in phangs_info.hst_obs_band_dict[target]['acs'])):
+            return True
+        else: return False
 
     @staticmethod
     def get_hst_ha_band(target):
@@ -1055,9 +1097,29 @@ class BandTools:
             raise KeyError(target, ' has no H-alpha observation ')
 
     @staticmethod
+    def check_nircam_obs(target):
+        """
+        check if NIRCAM observed
+        """
+        if target in phangs_info.jwst_obs_band_dict.keys():
+            if phangs_info.jwst_obs_band_dict[target]['nircam_observed_bands']: return True
+            else: return False
+        else: return False
+
+    @staticmethod
+    def check_miri_obs(target):
+        """
+        check if MIRI observed
+        """
+        if target in phangs_info.jwst_obs_band_dict.keys():
+            if phangs_info.jwst_obs_band_dict[target]['miri_observed_bands']: return True
+            else: return False
+        else: return False
+
+    @staticmethod
     def get_nircam_obs_band_list(target):
         """
-        gets list of bands of HST
+        gets list of bands of NIRCAM bands
         Parameters
         ----------
         target : str
@@ -1068,13 +1130,13 @@ class BandTools:
         nircam_band_list = phangs_info.jwst_obs_band_dict[target]['nircam_observed_bands']
         wave_list = []
         for band in nircam_band_list:
-            wave_list.append(BandTools.get_jwst_band_wave(band=band))
-        return BandTools.sort_band_list(band_list=nircam_band_list, wave_list=wave_list)
+            wave_list.append(ObsTools.get_jwst_band_wave(band=band))
+        return ObsTools.sort_band_list(band_list=nircam_band_list, wave_list=wave_list)
 
     @staticmethod
     def get_miri_obs_band_list(target):
         """
-        gets list of bands of HST
+        gets list of bands of MIRI bands
         Parameters
         ----------
         target : str
@@ -1085,8 +1147,44 @@ class BandTools:
         miri_band_list = phangs_info.jwst_obs_band_dict[target]['miri_observed_bands']
         wave_list = []
         for band in miri_band_list:
-            wave_list.append(BandTools.get_jwst_band_wave(band=band, instrument='miri'))
-        return BandTools.sort_band_list(band_list=miri_band_list, wave_list=wave_list)
+            wave_list.append(ObsTools.get_jwst_band_wave(band=band, instrument='miri'))
+        return ObsTools.sort_band_list(band_list=miri_band_list, wave_list=wave_list)
+
+    @staticmethod
+    def check_astrosat_obs(target):
+        """
+        Check for astrosat obs
+        """
+        if target in phangs_info.astrosat_obs_band_dict.keys(): return True
+        else: return False
+
+    @staticmethod
+    def check_muse_obs(target):
+        """
+        check if MUSE observation is available for target
+        Parameters
+        ----------
+        target :  str
+        Returns
+        -------
+        observation flag : bool
+        """
+        if target in phangs_info.phangs_muse_galaxy_list: return True
+        else: return False
+
+    @staticmethod
+    def check_alma_obs(target):
+        """
+        check if ALMA observation is available for target
+        Parameters
+        ----------
+        target :  str
+        Returns
+        -------
+        observation flag : bool
+        """
+        if target in phangs_info.phangs_alma_galaxy_list: return True
+        else: return False
 
     @staticmethod
     def get_astrosat_obs_band_list(target):
@@ -1102,8 +1200,8 @@ class BandTools:
         astrosat_band_list = phangs_info.astrosat_obs_band_dict[target]['observed_bands']
         wave_list = []
         for band in astrosat_band_list:
-            wave_list.append(BandTools.get_astrosat_band_wave(band=band))
-        return BandTools.sort_band_list(band_list=astrosat_band_list, wave_list=wave_list)
+            wave_list.append(ObsTools.get_astrosat_band_wave(band=band))
+        return ObsTools.sort_band_list(band_list=astrosat_band_list, wave_list=wave_list)
 
     @staticmethod
     def sort_band_list(band_list, wave_list):
@@ -1139,93 +1237,10 @@ class BandTools:
             return 'F555W'
         elif filter_name == 'I':
             return 'F814W'
+        elif filter_name == 'Ha':
+            return ObsTools.get_hst_ha_band(target=target)
         else:
             raise KeyError(filter_name, ' is not available ')
-
-class SpecTools:
-    """
-    tools related to spectroscopy
-    """
-
-    @staticmethod
-    def get_target_ned_redshift(target):
-        """
-        Function to get redshift from NED with astroquery
-        Parameters
-        ----------
-
-        Returns
-        -------
-        redshift : float
-        """
-
-        from astroquery.ipac.ned import Ned
-        # get the center of the target
-        ned_table = Ned.query_object(target)
-
-        return ned_table['Redshift'][0]
-
-    @staticmethod
-    def get_target_sys_vel(target):
-        """
-        Function to get target systemic velocity based on NED redshift
-        Parameters
-        ----------
-
-        Returns
-        -------
-        sys_vel : float
-        """
-        redshift = SpecTools.get_target_ned_redshift(target=target)
-        return np.log(redshift + 1) * speed_of_light_kmps
-
-
-class PhotTools:
-    """
-    all functions related to photometry
-    """
-
-    @staticmethod
-    def extract_flux_from_circ_aperture(data, wcs, pos, aperture_rad, data_err=None):
-        """
-
-        Parameters
-        ----------
-        data : ``numpy.ndarray``
-        wcs : ``astropy.wcs.WCS``
-        pos : ``astropy.coordinates.SkyCoord``
-        aperture_rad : float
-        data_err : ``numpy.ndarray``
-
-        Returns
-        -------
-        flux : float
-        flux_err : float
-        """
-        # estimate background
-        bkg = sep.Background(np.array(data, dtype=float))
-        # get radius in pixel scale
-        pix_radius = CoordTools.transform_world2pix_scale(length_in_arcsec=aperture_rad, wcs=wcs, dim=1)
-        # pix_radius_old = (wcs.world_to_pixel(pos)[0] -
-        #               wcs.world_to_pixel(SkyCoord(ra=pos.ra + aperture_rad * u.arcsec, dec=pos.dec))[0])
-        # print(pix_radius)
-        # print(pix_radius_old)
-        # exit()
-        # get the coordinates in pixel scale
-        pixel_coords = wcs.world_to_pixel(pos)
-
-        data = np.array(data.byteswap().newbyteorder(), dtype=float)
-        if data_err is None:
-            bkg_rms = bkg.rms()
-            data_err = np.array(bkg_rms.byteswap().newbyteorder(), dtype=float)
-        else:
-            data_err = np.array(data_err.byteswap().newbyteorder(), dtype=float)
-
-        flux, flux_err, flag = sep.sum_circle(data=data - bkg.globalback, x=np.array([float(pixel_coords[0])]),
-                                              y=np.array([float(pixel_coords[1])]), r=np.array([float(pix_radius)]),
-                                              err=data_err)
-
-        return float(flux), float(flux_err)
 
 
 class GeometryTools:
@@ -1260,18 +1275,17 @@ class GeometryTools:
         # compute contours
         contours = dummy_ax.contour(data_array, levels=level, colors='red')
         # get the path collection of one specific contour level
-        contour_collection = contours.collections[contour_index].get_paths()
+        contour_collection = contours.allsegs[contour_index]
         # get rid of the dummy figure
         plt.close(dummy_fig)
         # loop over the contours and select valid paths
         hull_dict = {}
         for idx, contour in enumerate(contour_collection):
-            vertices = contour.vertices
-            if len(vertices) > n_max_rejection_vertice:
+            if len(contour) > n_max_rejection_vertice:
                 # get all points from contour
                 x_cont = []
                 y_cont = []
-                for point in vertices:
+                for point in contour:
                     x_cont.append(point[0])
                     y_cont.append(point[1])
                 x_cont = np.array(x_cont)
@@ -1346,6 +1360,21 @@ class GeometryTools:
             dist2point_ensemble = np.sqrt((x_data_ensemble - x_data[index]) ** 2 + (y_data_ensemble - y_data[index]) ** 2)
             min_dist2point_ensemble[index] = min(dist2point_ensemble)
         return min_dist2point_ensemble > max_dist2ensemble
+
+
+class SpecHelper:
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def get_dap_data_identifier(res, ssp_model=None):
+        if res == 'copt':
+            data_identifier = res + '_' + ssp_model
+        else:
+            data_identifier = res
+        return data_identifier
+
+
 
 
 def load_muse_cube(muse_cube_path):
@@ -1591,264 +1620,6 @@ def fit_ppxf2spec(spec_dict, redshift, sps_name='fsps', age_range=None, metal_ra
     # exit()
 
 
-def fit_tardis2spec(spec_dict, velocity, hdr, sps_name='fsps', age_range=None, metal_range=None, name='explore1'):
-    """
-
-    Parameters
-    ----------
-    spec_dict : dict
-    sps_name : str
-        can be fsps, galaxev or emiles
-
-
-
-    Returns
-    -------
-    dict
-    """
-    from os import path
-    # import ppxf.sps_util as lib
-    # from urllib import request
-    # from ppxf.ppxf import ppxf
-
-    import matplotlib.pyplot as plt
-
-    from TardisPipeline.utilities import util_ppxf, util_ppxf_stellarpops, util_sfh_quantities, util_ppxf_emlines
-    import TardisPipeline as tardis_module
-    codedir = os.path.dirname(os.path.realpath(tardis_module.__file__))
-
-    import ppxf.ppxf_util as util
-    from astropy.io import fits, ascii
-    from astropy import constants as const
-    from astropy.table import Table
-    import extinction
-
-    # tardis_path = '/home/egorov/Soft/ifu-pipeline/TardisPipeline/' # change to directory where you have installed DAP
-    ncpu = 20  # how many cpu would you like to use? (20-30 is fine for our server, but use no more than 8 for laptop)
-    # print(codedir+'/Templates/spectralTemplates/eMILES-noyoung/')
-    # exit()
-    configs = {  #'SSP_LIB': os.path.join(codedir, 'Templates/spectralTemplates/eMILES-noyoung/'),
-        #'SSP_LIB_SFH': os.path.join(codedir, 'Templates/spectralTemplates/eMILES-noyoung/'),
-        'SSP_LIB': codedir + '/Templates/spectralTemplates/CB07_chabrier-young-selection-MetalPoorRemoved/',
-        # stellar library to use
-        'SSP_LIB_SFH': codedir + '/Templates/spectralTemplates/CB07_chabrier-young-selection-MetalPoorRemoved/',
-        # stellar library to use
-        # 'SSP_LIB': codedir+'/Templates/spectralTemplates/eMILES-noyoung/',  # stellar library to use
-        'NORM_TEMP': 'LIGHT', 'REDSHIFT': velocity, 'MOM': 4, 'MC_PPXF': 0, 'PARALLEL': 1,
-        'ADEG': 12,
-        'ADEG_SFH': 12,
-        'MDEG': 0,
-        'MDEG_SFH': 0,
-        'MDEG_EMS': 24,
-        'NCPU': ncpu,
-        'ROOTNAME': name,
-        'SPECTRUM_SIZE': abs(hdr['CD1_1']) * 3600.,  # spaxel size in arcsec
-        # 'EMI_FILE': os.path.join(codedir, '/Templates/configurationTemplates/emission_lines.setup'),
-        'MC_PPXF_SFH': 10,
-        'EMI_FILE': codedir + '/Templates/configurationTemplates/emission_lines.setup',  # set of emission lines to fit
-        'SKY_LINES_RANGES': codedir + '/Templates/configurationTemplates/sky_lines_ranges.setup',
-        'OUTDIR': 'data_output/',
-        'MASK_WIDTH': 150,
-        'GAS_MOMENTS': 4}
-
-    velscale = speed_of_light_kmps * np.diff(np.log(spec_dict['lam'][-2:]))[0]  # Smallest velocity step
-    log_spec, logLam, velscale = util.log_rebin(lam=spec_dict['lam_range'], spec=spec_dict['spec_flux'],
-                                                velscale=velscale)
-    c1 = fits.Column(name='LOGLAM', array=logLam, format='D')
-    c2 = fits.Column(name='LOGSPEC', array=log_spec, format='D')
-    t = fits.BinTableHDU.from_columns([c1, c2])
-    t.writeto('{}{}-ppxf_obsspec.fits'.format(configs['OUTDIR'], name), overwrite=True)
-    log_err, _, _ = util.log_rebin(spec_dict['lam_range'], spec_dict['spec_flux_err'], velscale=velscale)
-    ww = ~np.isfinite(log_spec) | ~np.isfinite(log_err) | (log_err <= 0)
-    log_err[ww] = 9999
-    log_spec[ww] = 0.
-    # # the DAP fitting routines expect log_spec and log_err to be 2D arrays containing N spectra,
-    # # here we add a dummy dimension since we are fitting only one spectrum
-    # # to fit more than one spectrum at the same time these lines can be easily adapted
-    log_err = np.expand_dims(log_err, axis=1)
-    log_spec = np.expand_dims(log_spec, axis=1)
-
-    # define the LSF of the MUSE data
-    LSF = get_MUSE_polyFWHM(np.exp(logLam), version="udf10")
-
-    # define the velocity scale in kms
-    velscale = (logLam[1] - logLam[0]) * speed_of_light_kmps
-
-    # this is the stellar kinematics ppxf wrapper function
-    ppxf_result = util_ppxf.runModule_PPXF(configs=configs,  #tasks='',
-                                           logLam=logLam,
-                                           log_spec=log_spec, log_error=log_err,
-                                           LSF=LSF)  #, velscale=velscale)
-    util_ppxf_emlines.runModule_PPXF_emlines(configs=configs,  #tasks='',
-                                             logLam=logLam,
-                                             log_spec=log_spec, log_error=log_err,
-                                             LSF=LSF, ppxf_results=ppxf_result)
-
-    # exit()
-    util_ppxf_stellarpops.runModule_PPXF_stellarpops(configs, logLam, log_spec, log_err, LSF, np.arange(1), ppxf_result)
-    masses_density, mass_density_err, ages_mw, ages_mw_err, z_mw, z_mw_err, ages_lw, ages_lw_err, z_lw, z_lw_err = util_sfh_quantities.compute_sfh_relevant_quantities(
-        configs)
-    print(masses_density, mass_density_err, ages_mw, ages_mw_err, z_mw, z_mw_err, ages_lw, ages_lw_err, z_lw, z_lw_err)
-
-    # read the output file which contains the best-fit from the emission lines fitting stage
-    ppxf_bestfit_gas = configs['OUTDIR'] + configs['ROOTNAME'] + '_ppxf-bestfit-emlines.fits'
-    hdu3 = fits.open(ppxf_bestfit_gas)
-    bestfit_gas = hdu3['FIT'].data["BESTFIT"][0]
-    mask = (hdu3['FIT'].data['BESTFIT'][0] == 0)
-    gas_templ = hdu3['FIT'].data["GAS_BESTFIT"][0]
-
-    ppxf_bestfit = configs['OUTDIR'] + configs['ROOTNAME'] + '_ppxf-bestfit.fits'
-    hdu_best_fit = fits.open(ppxf_bestfit)
-    cont_fit = hdu_best_fit['FIT'].data["BESTFIT"][0]
-
-    # # reddening = ppxf_sfh_data['REDDENING']
-    # hdu_best_fit_sfh = fits.open('data_output/explore1_ppxf-bestfit.fits')
-    # print(hdu_best_fit_sfh.info())
-    # print(hdu_best_fit_sfh[1].data.names)
-    #
-    # print(hdu_best_fit_sfh['FIT'].data['BESTFIT'])
-    # print(hdu_best_fit_sfh['FIT'].data['BESTFIT'].shape)
-    # print(logLam.shape)
-    # print(spec_dict['lam'].shape)
-    # # exit()
-    # # hdu_best_fit = fits.open('data_output/explore1_templates_SFH_info.fits')
-    # # print(hdu_best_fit.info())
-    # # print(hdu_best_fit[1].data.names)
-    # # print(hdu_best_fit[1].data['Age'])
-
-    plt.plot(spec_dict['lam'], spec_dict['spec_flux'])
-    plt.plot(np.exp(logLam), cont_fit)
-    plt.plot(np.exp(logLam), gas_templ)
-    plt.plot(np.exp(logLam), cont_fit + gas_templ)
-    plt.show()
-
-    exit()
-    # this the ppxf wrapper function to simulataneously fit the continuum plus emission lines
-    # util_ppxf_emlines.runModule_PPXF_emlines(configs,# '',
-    #                                          logLam, log_spec,
-    #                                          log_err, LSF, #velscale,
-    #                                          np.arange(1), ppxf_result)
-    util_ppxf_emlines.runModule_PPXF_emlines(configs=configs,  #tasks='',
-                                             logLam=logLam,
-                                             log_spec=log_spec, log_error=log_err,
-                                             LSF=LSF, ppxf_results=ppxf_result)
-
-    emlines = configs['OUTDIR'] + configs['ROOTNAME'] + '_emlines.fits'
-    with fits.open(emlines) as hdu_emis:
-        ems = Table(hdu_emis['EMLDATA_DATA'].data)
-
-    # This is to include SFH results, NOT TESTED!
-    with fits.open(configs['OUTDIR'] + configs['ROOTNAME'] + '_ppxf_SFH.fits') as hdu_ppxf_sfh:
-        ppxf_sfh_data = hdu_ppxf_sfh[1].data
-        masses_density, mass_density_err, ages_mw, ages_mw_err, z_mw, z_mw_err, ages_lw, ages_lw_err, z_lw, z_lw_err = util_sfh_quantities.compute_sfh_relevant_quantities(
-            configs)
-        reddening = ppxf_sfh_data['REDDENING']
-        st_props = masses_density, mass_density_err, ages_mw, ages_mw_err, z_mw, z_mw_err, ages_lw, ages_lw_err, z_lw, z_lw_err, reddening
-
-    exit()
-
-    return ems, st_props
-
-    spectra_muse_err, ln_lam_gal, velscale = util.log_rebin(lam=spec_dict['lam_range'],
-                                                            spec=spec_dict['spec_flux_err'], velscale=velscale)
-
-    # print(sum(np.isnan(spec_dict['spec_flux'])))
-    # print(sum(np.isnan(spectra_muse)))
-    #
-    # plt.plot(ln_lam_gal, spectra_muse_err)
-    # plt.show()
-
-    lsf_dict = {"lam": spec_dict['lam'], "fwhm": spec_dict['lsf']}
-    # get new wavelength array
-    lam_gal = np.exp(ln_lam_gal)
-    # goodpixels = util.determine_goodpixels(ln_lam=ln_lam_gal, lam_range_temp=spec_dict['lam_range'], z=redshift)
-    goodpixels = None
-    # goodpixels = (np.isnan(spectra_muse) + np.isnan(spectra_muse_err) + np.isinf(spectra_muse) + np.isinf(spectra_muse_err))
-    # print(sum(np.invert(np.isnan(spectra_muse) + np.isnan(spectra_muse_err) + np.isinf(spectra_muse) + np.isinf(spectra_muse_err))))
-    # print(sum(((spectra_muse > 0) & (spectra_muse < 100000000000000))))
-
-    # get stellar library
-    ppxf_dir = path.dirname(path.realpath(lib.__file__))
-    basename = f"spectra_{sps_name}_9.0.npz"
-    filename = path.join(ppxf_dir, 'sps_models', basename)
-    if not path.isfile(filename):
-        url = "https://raw.githubusercontent.com/micappe/ppxf_data/main/" + basename
-        request.urlretrieve(url, filename)
-
-    sps = lib.sps_lib(filename=filename, velscale=velscale, fwhm_gal=lsf_dict, norm_range=[5070, 5950],
-                      wave_range=None,
-                      age_range=age_range, metal_range=metal_range)
-    reg_dim = sps.templates.shape[1:]  # shape of (n_ages, n_metal)
-    stars_templates = sps.templates.reshape(sps.templates.shape[0], -1)
-
-    gas_templates, gas_names, line_wave = util.emission_lines(ln_lam_temp=sps.ln_lam_temp,
-                                                              lam_range_gal=spec_dict['lam_range'],
-                                                              FWHM_gal=get_MUSE_polyFWHM)
-
-    templates = np.column_stack([stars_templates, gas_templates])
-
-    n_star_temps = stars_templates.shape[1]
-    component = [0] * n_star_temps
-    for line_name in gas_names:
-        if '[' in line_name:
-            component += [2]
-        else:
-            component += [1]
-
-    gas_component = np.array(component) > 0  # gas_component=True for gas templates
-
-    moments = [4, 4, 4]
-
-    vel = speed_of_light_kmps * np.log(1 + redshift)  # eq.(8) of Cappellari (2017)
-    start_gas = [vel, 150., 0, 0]  # starting guess
-    start_star = [vel, 150., 0, 0]
-    print(start_gas)
-    start = [start_star, start_gas, start_gas]
-
-    pp = ppxf(templates=templates, galaxy=spectra_muse, noise=spectra_muse_err, velscale=velscale, start=start,
-              moments=moments, degree=-1, mdegree=4, lam=lam_gal, lam_temp=sps.lam_temp,  #regul=1/rms,
-              reg_dim=reg_dim, component=component, gas_component=gas_component,  #reddening=0,
-              gas_names=gas_names, goodpixels=goodpixels)
-
-    light_weights = pp.weights[~gas_component]  # Exclude weights of the gas templates
-    light_weights = light_weights.reshape(reg_dim)  # Reshape to (n_ages, n_metal)
-    light_weights /= light_weights.sum()  # Normalize to light fractions
-
-    # light_weights = pp.weights[~gas_component]      # Exclude weights of the gas templates
-    # light_weights = light_weights.reshape(reg_dim)
-
-    ages, met = sps.mean_age_metal(light_weights)
-    mass2light = sps.mass_to_light(light_weights, redshift=redshift)
-
-    return {'pp': pp, 'ages': ages, 'met': met, 'mass2light': mass2light}
-
-    # wavelength = pp.lam
-    # total_flux = pp.galaxy
-    # total_flux_err = pp.noise
-    #
-    # best_fit = pp.bestfit
-    # gas_best_fit = pp.gas_bestfit
-    # continuum_best_fit = best_fit - gas_best_fit
-    #
-    # plt.errorbar(wavelength, total_flux, yerr=total_flux_err)
-    # plt.plot(wavelength, continuum_best_fit + gas_best_fit)
-    # plt.plot(wavelength, gas_best_fit)
-    # plt.show()
-    #
-    #
-    #
-    #
-    # plt.figure(figsize=(17, 6))
-    # plt.subplot(111)
-    # pp.plot()
-    # plt.show()
-    #
-    # plt.figure(figsize=(9, 3))
-    # sps.plot(light_weights)
-    # plt.title("Light Weights Fractions");
-    # plt.show()
-    #
-    # exit()
 
 
 def compute_cbar_norm(vmin_vmax=None, cutout_list=None, log_scale=False):
@@ -1913,41 +1684,6 @@ def compute_cbar_norm(vmin_vmax=None, cutout_list=None, log_scale=False):
     return norm
 
 
-def create_cbar(ax_cbar, cmap, norm, cbar_label, fontsize, ticks=None, labelpad=2, tick_width=2, orientation='vertical',
-                extend='neither'):
-    """
-
-    Parameters
-    ----------
-    ax_cbar : ``matplotlib.pylab.axis``
-    cmap : str
-        same as name parameter of ``matplotlib.colors.Colormap.name``
-    norm : ``matplotlib.colors.Normalize``  or ``matplotlib.colors.LogNorm``
-    cbar_label : str
-    fontsize : int or float
-    ticks : list
-    labelpad : int or float
-    tick_width : int or float
-    orientation : str
-        default is `vertical`
-    extend : str
-        default is 'neither'
-        can be 'neither', 'min' , 'max' or 'both'
-    """
-    ColorbarBase(ax_cbar, orientation=orientation, cmap=cmap, norm=norm, extend=extend, ticks=ticks)
-    if orientation == 'vertical':
-        ax_cbar.set_ylabel(cbar_label, labelpad=labelpad, fontsize=fontsize)
-        ax_cbar.tick_params(axis='both', which='both', width=tick_width, direction='in', top=True, labelbottom=False,
-                            labeltop=True, labelsize=fontsize)
-    elif orientation == 'horizontal':
-        # ax_cbar.set_xlabel(cbar_label, labelpad=labelpad, fontsize=fontsize)
-        ax_cbar.tick_params(width=tick_width, direction='in', top=True, labeltop=True, bottom=False, labelbottom=False,
-                            labelsize=fontsize)
-        # also put the minor ticks to the top
-        ax_cbar.tick_params(which='minor', width=tick_width, direction='in',
-                            top=True, labeltop=True, bottom=False, labelbottom=False,
-                            labelsize=fontsize / 1.5)
-        ax_cbar.set_title(cbar_label, fontsize=fontsize)
 
 
 def lin_func(p, x):

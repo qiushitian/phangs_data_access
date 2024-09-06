@@ -4,6 +4,7 @@ Script to develop how to check the observational coverage of a PHANGS target
 import matplotlib.pyplot as plt
 import numpy as np
 import os
+import pickle
 from phangs_data_access import phot_access
 from phangs_data_access import helper_func
 from phangs_data_access import phangs_info
@@ -56,7 +57,13 @@ for target in target_list:
         dec = coordinates.dec.deg
         obs_hull_dict.update({band: {0: {'ra': ra, 'dec': dec}}})
 
+
     # save dictionary
-    np.save('data_output/%s_astrosat_obs_hull_dict.npy' % target, obs_hull_dict)
+    if not os.path.isdir('data_output'):
+        os.makedirs('data_output')
+
+    with open('data_output/%s_astrosat_obs_hull_dict.npy' % target, 'wb') as file_name:
+        pickle.dump(obs_hull_dict, file_name)
+
 
 

@@ -4,6 +4,7 @@ Script to develop how to check the observational coverage of a PHANGS target
 
 import numpy as np
 import os
+import pickle
 from phangs_data_access import spec_access
 from phangs_data_access import helper_func
 from phangs_data_access import phangs_info
@@ -37,7 +38,7 @@ for target in target_list:
 
         mask_coverage = np.array(np.invert(np.isnan( data)), dtype=float)
 
-        hull_dict = helper_func.HullTools.contour2hull(data_array=mask_coverage, level=0, contour_index=0, n_max_rejection_vertice=100)
+        hull_dict = helper_func.GeometryTools.contour2hull(data_array=mask_coverage, level=0, contour_index=0, n_max_rejection_vertice=100)
         print(res, ' n of hulls: ', len(hull_dict.keys()))
 
         # now save the hull points as coordinates
@@ -51,6 +52,11 @@ for target in target_list:
         obs_hull_dict.update({res: hull_coord_dict})
 
     # save dictionary
-    np.save('data_output/%s_muse_obs_hull_dict.npy' % target, obs_hull_dict)
+    if not os.path.isdir('data_output'):
+        os.makedirs('data_output')
+
+    with open('data_output/%s_muse_obs_hull_dict.npy' % target, 'wb') as file_name:
+        pickle.dump(obs_hull_dict, file_name)
+
 
 

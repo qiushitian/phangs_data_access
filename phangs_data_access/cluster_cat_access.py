@@ -5,11 +5,15 @@ import os.path
 import numpy as np
 from pathlib import Path
 from astropy.table import Table, hstack
+import astropy.units as u
 
-from phangs_data_access import phangs_access_config, helper_func, phangs_info
+from phangs_data_access import phangs_access_config, helper_func, phangs_info, dust_tools
 from phangs_data_access.sample_access import SampleAccess
+from phangs_data_access.phot_access import PhotAccess
+from phangs_data_access.gas_access import GasAccess
+from phangs_data_access.spec_access import SpecAccess
 
-from dust_tools.extinction_tools import ExtinctionTools
+# from dust_tools.extinction_tools import ExtinctionTools
 
 
 class ClusterCatAccess:
@@ -298,7 +302,7 @@ class ClusterCatAccess:
         Dust attenuation measured in A_v [unit mag]
         """
         ebv_values = self.get_hst_cc_ebv(target=target, classify=classify, cluster_class=cluster_class)
-        return ExtinctionTools.ebv2av(ebv=ebv_values)
+        return dust_tools.DustTools.ebv2av(ebv=ebv_values)
 
     def get_hst_cc_ir4_age(self, target, classify='human', cluster_class='class12'):
         """
@@ -348,7 +352,7 @@ class ClusterCatAccess:
         Dust attenuation measured in A_v estimation without decision tree [unit mag]
         """
         ebv_values = self.get_hst_cc_ir4_ebv(target=target, classify=classify, cluster_class=cluster_class)
-        return ExtinctionTools.ebv2av(ebv=ebv_values)
+        return dust_tools.DustTools.ebv2av(ebv=ebv_values)
 
     def get_hst_cc_ci(self, target, classify='human', cluster_class='class12'):
         """
@@ -386,7 +390,7 @@ class ClusterCatAccess:
         Flux in a specific band [unit is mJy]
         """
         self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
-        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
+        band = helper_func.ObsTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_mJy' % band.upper()])
 
@@ -395,7 +399,7 @@ class ClusterCatAccess:
         Uncertainty of flux in a specific band [unit is mJy]
         """
         self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
-        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
+        band = helper_func.ObsTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_mJy_ERR' % band.upper()])
 
@@ -422,7 +426,7 @@ class ClusterCatAccess:
         magnitude [unit is Vega mag]
         """
         self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
-        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
+        band = helper_func.ObsTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_VEGA' % band.upper()])
 
@@ -432,7 +436,7 @@ class ClusterCatAccess:
         this is also valid for AB magnitudes [unit is mag]
         """
         self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
-        band = helper_func.BandTools.filter_name2hst_band(target=target, filter_name=filter_name)
+        band = helper_func.ObsTools.filter_name2hst_band(target=target, filter_name=filter_name)
         return np.array(self.hst_cc_data[str(target) + '_' + classify + '_' + cluster_class]
                         ['PHANGS_%s_VEGA_ERR' % band.upper()])
 
@@ -443,7 +447,7 @@ class ClusterCatAccess:
         self.check_load_hst_cluster_cat(target=target, classify=classify, cluster_class=cluster_class)
         flux = self.get_hst_cc_band_flux(target=target, filter_name=filter_name, classify=classify,
                                          cluster_class=cluster_class)
-        return helper_func.conv_mjy2ab_mag(flux=flux)
+        return helper_func.UnitTools.conv_mjy2ab_mag(flux=flux)
 
     def get_hst_cc_color(self, target, filter_name_1, filter_name_2, mag_sys='vega', classify='human',
                          cluster_class='class12'):
@@ -527,6 +531,14 @@ class ClusterCatAccess:
             cluster_class_ml = np.array([])
             cluster_class_ml_qual = np.array([])
             ci = np.array([])
+
+            mask_hst_broad_band_covered = np.array([], dtype=bool)
+            mask_hst_ha_covered = np.array([], dtype=bool)
+            mask_nircam_covered = np.array([], dtype=bool)
+            mask_miri_covered = np.array([], dtype=bool)
+            mask_astrosat_covered = np.array([], dtype=bool)
+            mask_muse_covered = np.array([], dtype=bool)
+            mask_alma_covered = np.array([], dtype=bool)
 
             color_vi_vega = np.array([])
             color_nuvu_vega = np.array([])
@@ -615,6 +627,91 @@ class ClusterCatAccess:
                                                                           classify=classify)])
                     ci = np.concatenate([ci, self.get_hst_cc_ci(target=target, cluster_class=cluster_class,
                                                                 classify=classify)])
+
+                    # coverage mask
+                    # load hst broad band obs.
+                    if target == 'ngc1510': galaxy_name = 'ngc1512'
+                    else: galaxy_name = target
+
+                    phangs_phot = PhotAccess(
+                        target_name=helper_func.FileTools.target_name_no_directions(target=galaxy_name))
+                    phangs_gas = GasAccess(
+                        target_name=helper_func.FileTools.target_name_no_directions(target=galaxy_name))
+                    phangs_spec = SpecAccess(
+                        target_name=helper_func.FileTools.target_name_no_directions(target=galaxy_name))
+                    mask_hst_broad_band_covered = (
+                        np.concatenate([mask_hst_broad_band_covered,
+                                        phangs_phot.check_coords_covered_by_obs(
+                                            obs='hst', ra=ra_, dec=dec_, band_list=
+                                            helper_func.ObsTools.get_hst_obs_broad_band_list(
+                                                target=
+                                                helper_func.FileTools.target_name_no_directions(target=galaxy_name)))]))
+                    if helper_func.ObsTools.check_hst_ha_obs(
+                            target=helper_func.FileTools.target_name_no_directions(target=galaxy_name)):
+                        mask_hst_ha_covered = (
+                            np.concatenate([mask_hst_ha_covered,
+                                            phangs_phot.check_coords_covered_by_obs(
+                                                obs='hst', ra=ra_, dec=dec_, band_list=
+                                                [helper_func.ObsTools.get_hst_ha_band(
+                                                    target=
+                                                    helper_func.FileTools.target_name_no_directions(target=galaxy_name))])]))
+                    else:
+                        mask_hst_ha_covered = np.concatenate([mask_hst_ha_covered, np.zeros(len(ra_), dtype=bool)])
+
+                    if helper_func.ObsTools.check_nircam_obs(
+                            target=helper_func.FileTools.target_name_no_directions(target=galaxy_name)):
+                        mask_nircam_covered = (
+                            np.concatenate([mask_nircam_covered,
+                                            phangs_phot.check_coords_covered_by_obs(
+                                                obs='nircam', ra=ra_, dec=dec_, band_list=
+                                                helper_func.ObsTools.get_nircam_obs_band_list(
+                                                    target=
+                                                    helper_func.FileTools.target_name_no_directions(target=galaxy_name)))]))
+                    else:
+                        mask_nircam_covered = np.concatenate([mask_nircam_covered, np.zeros(len(ra_), dtype=bool)])
+
+                    if helper_func.ObsTools.check_miri_obs(
+                            target=helper_func.FileTools.target_name_no_directions(target=galaxy_name)):
+                        mask_miri_covered = (
+                            np.concatenate([mask_miri_covered,
+                                            phangs_phot.check_coords_covered_by_obs(
+                                                obs='miri', ra=ra_, dec=dec_, band_list=
+                                                helper_func.ObsTools.get_miri_obs_band_list(
+                                                    target=
+                                                    helper_func.FileTools.target_name_no_directions(target=
+                                                                                                    galaxy_name)))]))
+                    else:
+                        mask_miri_covered = np.concatenate([mask_miri_covered, np.zeros(len(ra_), dtype=bool)])
+
+                    if helper_func.ObsTools.check_astrosat_obs(
+                            target=helper_func.FileTools.target_name_no_directions(target=galaxy_name)):
+                        mask_astrosat_covered = (
+                            np.concatenate([mask_astrosat_covered,
+                                            phangs_phot.check_coords_covered_by_obs(
+                                                obs='astrosat', ra=ra_, dec=dec_, band_list=
+                                                helper_func.ObsTools.get_astrosat_obs_band_list(
+                                                    target=
+                                                    helper_func.FileTools.target_name_no_directions(target=
+                                                                                                    galaxy_name)))]))
+                    else:
+                        mask_astrosat_covered = np.concatenate([mask_astrosat_covered, np.zeros(len(ra_), dtype=bool)])
+
+                    if helper_func.ObsTools.check_muse_obs(
+                            target=helper_func.FileTools.target_name_no_directions(target=galaxy_name)):
+                        mask_muse_covered = (
+                            np.concatenate([mask_muse_covered,
+                                            phangs_spec.check_coords_covered_by_muse(ra=ra_, dec=dec_)]))
+                    else:
+                        mask_muse_covered = np.concatenate([mask_muse_covered, np.zeros(len(ra_), dtype=bool)])
+
+                    if helper_func.ObsTools.check_alma_obs(
+                            target=helper_func.FileTools.target_name_no_directions(target=galaxy_name)):
+                        mask_alma_covered = (
+                            np.concatenate([mask_alma_covered,
+                                            phangs_gas.check_coords_covered_by_alma(ra=ra_, dec=dec_)]))
+                    else:
+                        mask_alma_covered = np.concatenate([mask_alma_covered, np.zeros(len(ra_), dtype=bool)])
+
 
                     color_vi_vega = np.concatenate([color_vi_vega,
                                                     self.get_hst_cc_color(target=target, cluster_class=cluster_class,
@@ -740,6 +837,13 @@ class ClusterCatAccess:
                 'cluster_class_ml': cluster_class_ml,
                 'cluster_class_ml_qual': cluster_class_ml_qual,
                 'ci': ci,
+                'mask_hst_broad_band_covered': mask_hst_broad_band_covered,
+                'mask_hst_ha_covered': mask_hst_ha_covered,
+                'mask_nircam_covered': mask_nircam_covered,
+                'mask_miri_covered': mask_miri_covered,
+                'mask_astrosat_covered': mask_astrosat_covered,
+                'mask_muse_covered': mask_muse_covered,
+                'mask_alma_covered': mask_alma_covered,
                 'color_vi_vega': color_vi_vega,
                 'color_nuvu_vega': color_nuvu_vega,
                 'color_ub_vega': color_ub_vega,
@@ -851,11 +955,22 @@ class ClusterCatAccess:
         file_path = Path(phangs_access_config.phangs_config_dict['phangs_hst_cluster_cat_extend_sed_fit_path'])
         file_name = '%s_%s_all_clusters_results.csv' % (helper_func.FileTools.target_names_no_zeros(target=target),
                                                         self.phangs_hst_cluster_cat_extend_sed_ver)
+
+        print(file_path / file_name)
         table_data = helper_func.FileTools.load_ascii_table(file_name=file_path / file_name)
 
         self.extend_data.update({
             'extend_sed_table_data_%s' % target: table_data,
         })
+
+    def get_extend_phot_cross_match_mask(self, target, ra, dec, toleance_arcsec=0.05, allow_multiple_id=False):
+        ra_ext_phot ,dec_ext_phot = self.get_extend_phot_coords(target=target)
+        separation = helper_func.CoordTools.calc_coord_separation(ra_1=ra_ext_phot, dec_1=dec_ext_phot, ra_2=ra, dec_2=dec)
+        cross_match_map = separation < toleance_arcsec*u.arcsec
+        if allow_multiple_id & (sum(cross_match_map) > 1):
+            raise RuntimeError('Multiple obejcts were identified!')
+        return cross_match_map
+
 
     def get_extend_phot_candidate_id(self, target):
         """
@@ -1005,7 +1120,7 @@ class ClusterCatAccess:
         """
 
         # convert to E(B-V)
-        return ExtinctionTools.av2ebv(av=self.get_extend_sed_av(target))
+        return dust_tools.DustTools.av2ebv(av=self.get_extend_sed_av(target))
 
     def identify_phangs_id_in_ext_phot_table(self, target, single_phangs_cluster_id):
 

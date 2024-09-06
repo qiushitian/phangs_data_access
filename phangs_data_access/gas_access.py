@@ -3,6 +3,7 @@ Construct a data access structure for CO and HI gas observations
 """
 import os.path
 from pathlib import Path
+import pickle
 
 import astropy.units as u
 import astropy.wcs
@@ -42,7 +43,7 @@ class GasAccess:
         self.alma_data = {}
 
         # get path to observation coverage hulls
-        self.path2obs_cover_gull = (Path(__file__).parent.parent.absolute() / 'meta_data' / 'obs_coverage' /
+        self.path2obs_cover_hull = (Path(__file__).parent.parent.absolute() / 'meta_data' / 'obs_coverage' /
                                     'data_output')
 
         super().__init__()
@@ -264,8 +265,10 @@ class GasAccess:
         -------
         coverage_dict : dict
         """
-        return np.load(self.path2obs_cover_gull / ('%s_alma_obs_hull_dict.npy' % self.target_name),
-                       allow_pickle=True).item()
+        # return np.load(self.path2obs_cover_hull / ('%s_alma_obs_hull_dict.npy' % self.target_name),
+        #                allow_pickle=True).item()
+        with open(self.path2obs_cover_hull / ('%s_alma_obs_hull_dict.npy' % self.target_name), 'rb') as file_name:
+            return pickle.load(file_name)
 
     def check_coords_covered_by_alma(self, ra, dec, res='native', max_dist_dist2hull_arcsec=2):
         """
@@ -282,6 +285,10 @@ class GasAccess:
         -------
         coverage_dict : ``np.ndarray``
         """
+
+        if isinstance(ra, float):
+            ra = [ra]
+            dec = [dec]
 
         hull_dict = self.get_alma_obs_coverage_hull_dict()[res]
         coverage_mask = np.zeros(len(ra), dtype=bool)
