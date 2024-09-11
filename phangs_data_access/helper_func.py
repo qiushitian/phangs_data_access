@@ -40,7 +40,8 @@ import pandas as pd
 
 import numpy as np
 
-from phangs_data_access import phys_params, phangs_info, sample_access
+# from phangs_data_access import phys_params, phangs_info, sample_access
+import phys_params, phangs_info#, sample_access
 
 
 class CoordTools:
@@ -558,26 +559,26 @@ class UnitTools:
         # here we must be careful because the flux of the filter is in mJy and the zero point flux is in Jy
         return -2.5 * np.log10(flux*1e-3 / zp_vega_flux)
 
-    @staticmethod
-    def conv_mjy2vega_old(flux, ab_zp=None, vega_zp=None, target=None, band=None):
-        """
-        This function (non-sophisticated as of now)
-        assumes the flux are given in units of milli-Janskies
-        """
-        # compute zero point difference
-        if (ab_zp is not None) & (vega_zp is not None):
-            zp_diff = (vega_zp - ab_zp)
-        elif (target is not None) & (band is not None):
-            zp_diff = (sample_access.SampleAccess.get_hst_obs_zp_mag(target=target, band=band, mag_sys='vega') -
-                       sample_access.SampleAccess.get_hst_obs_zp_mag(target=target, band=band, mag_sys='AB'))
-        else:
-            raise KeyError(' you must either provide zeropoint magnitudes or provide a target name and band name')
-
-        ab_mag = UnitTools.conv_mjy2ab_mag(flux=flux)
-        """Convert AB mag to Vega mag"""
-        vega_mag = ab_mag + zp_diff
-
-        return vega_mag
+    # @staticmethod
+    # def conv_mjy2vega_old(flux, ab_zp=None, vega_zp=None, target=None, band=None):
+    #     """
+    #     This function (non-sophisticated as of now)
+    #     assumes the flux are given in units of milli-Janskies
+    #     """
+    #     # compute zero point difference
+    #     if (ab_zp is not None) & (vega_zp is not None):
+    #         zp_diff = (vega_zp - ab_zp)
+    #     elif (target is not None) & (band is not None):
+    #         zp_diff = (sample_access.SampleAccess.get_hst_obs_zp_mag(target=target, band=band, mag_sys='vega') -
+    #                    sample_access.SampleAccess.get_hst_obs_zp_mag(target=target, band=band, mag_sys='AB'))
+    #     else:
+    #         raise KeyError(' you must either provide zeropoint magnitudes or provide a target name and band name')
+# 
+    #     ab_mag = UnitTools.conv_mjy2ab_mag(flux=flux)
+    #     """Convert AB mag to Vega mag"""
+    #     vega_mag = ab_mag + zp_diff
+# 
+    #     return vega_mag
 
 
 class FileTools:

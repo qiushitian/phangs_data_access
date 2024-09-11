@@ -4,7 +4,8 @@ Script to access the entire PHANGS galaxy sample and global properties
 from pathlib import Path
 from astropy.table import Table
 import numpy as np
-from phangs_data_access import phangs_access_config, helper_func
+# from phangs_data_access import phangs_access_config, helper_func
+import phangs_access_config, helper_func
 
 
 class SampleAccess:

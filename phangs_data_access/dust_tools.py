@@ -5,7 +5,8 @@ import astropy.units as u
 
 from dust_extinction import parameter_averages
 
-from phangs_data_access import helper_func, sample_access, phys_params
+# from phangs_data_access import helper_func, sample_access, phys_params
+import helper_func, phys_params #, sample_access
 
 
 class DustTools:
@@ -42,16 +43,16 @@ class DustTools:
         gal_ebv_table = IrsaDust.get_query_table(target_coords, section='ebv', radius=rad_deg)
         return gal_ebv_table['ext %s %s' % (method, ebv_estimator)]
 
-    @staticmethod
-    def get_target_gal_ext_ebv(target, method='SandF', ebv_estimator='mean', rad_deg=None):
-        """
-        Function to get Galactic E(B-V) for phangs target
-        """
-        phangs_sample = sample_access.SampleAccess()
-        ra_target, dec_target = phangs_sample.get_target_central_coords(target=target)
-
-        return DustTools.get_coord_gal_ext_evb(ra=ra_target, dec=dec_target, rad_deg=rad_deg, method=method,
-                                               ebv_estimator=ebv_estimator)
+    # @staticmethod
+    # def get_target_gal_ext_ebv(target, method='SandF', ebv_estimator='mean', rad_deg=None):
+    #     """
+    #     Function to get Galactic E(B-V) for phangs target
+    #     """
+    #     phangs_sample = sample_access.SampleAccess()
+    #     ra_target, dec_target = phangs_sample.get_target_central_coords(target=target)
+# 
+    #     return DustTools.get_coord_gal_ext_evb(ra=ra_target, dec=dec_target, rad_deg=rad_deg, method=method,
+    #                                            ebv_estimator=ebv_estimator)
 
     @staticmethod
     def get_gal_ext_at_wave(ra, dec, wave_mu, rad_deg=None, method='SandF', ebv_estimator='mean', ext_law='F99', r_v=3.1):
